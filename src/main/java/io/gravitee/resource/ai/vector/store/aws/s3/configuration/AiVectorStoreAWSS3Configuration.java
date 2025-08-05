@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.gravitee.resource.ai.vector.store.redis.configuration;
+package io.gravitee.resource.ai.vector.store.aws.s3.configuration;
 
 import io.gravitee.resource.ai.vector.store.api.AiVectorStoreProperties;
 import io.gravitee.resource.api.ResourceConfiguration;
@@ -22,5 +22,5 @@ import io.gravitee.resource.api.ResourceConfiguration;
  * @author Rémi SULTAN (remi.sultan at graviteesource.com)
  * @author GraviteeSource Team
  */
-public record AiVectorStoreRedisConfiguration(AiVectorStoreProperties properties, RedisConfiguration redisConfig)
+public record AiVectorStoreAWSS3Configuration(AiVectorStoreProperties properties, RedisConfiguration redisConfig)
   implements ResourceConfiguration {}

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.gravitee.resource.ai.vector.store.redis;
+package io.gravitee.resource.ai.vector.store.aws.s3;
 
 import static io.gravitee.resource.ai.vector.store.api.IndexType.HNSW;
 import static io.vertx.redis.client.ResponseType.MULTI;
@@ -23,9 +23,9 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.gravitee.resource.ai.vector.store.api.*;
-import io.gravitee.resource.ai.vector.store.redis.configuration.AiVectorStoreRedisConfiguration;
-import io.gravitee.resource.ai.vector.store.redis.configuration.DistanceMetric;
-import io.gravitee.resource.ai.vector.store.redis.configuration.RedisConfiguration;
+import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AiVectorStoreAWSS3Configuration;
+import io.gravitee.resource.ai.vector.store.aws.s3.configuration.DistanceMetric;
+import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3Configuration;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
@@ -49,7 +49,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 
 @Slf4j
-public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorStoreRedisConfiguration> {
+public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorStoreAWSS3Configuration> {
 
   private static final String VECTOR_PARAM = "vector";
   private static final String MAX_RESULTS_PARAM = "max_results";
@@ -96,7 +96,7 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
   private static final String ID_ATTR = "id";
 
   private AiVectorStoreProperties properties;
-  private RedisConfiguration redisConfig;
+  private AWSS3Configuration awsS3Config;
 
   private Redis client;
   private Vertx vertx;
@@ -107,21 +107,21 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
     vertx = getBean(Vertx.class);
 
     properties = super.configuration().properties();
-    redisConfig = super.configuration().redisConfig();
+    awsS3Config = super.configuration().awsS3Configuration();
     client = buildClient();
 
     if (properties.readOnly()) {
-      log.debug("AiVectorStoreRedisResource is read-only");
+      log.debug("AiVectorStoreAWSS3Resource is read-only");
     } else {
       createIndex();
     }
   }
 
   private void createIndex() {
-    indexExists(redisConfig.index())
+    indexExists(awsS3Config.index())
       .switchIfEmpty(
         Maybe.defer(() -> {
-          log.debug("Index [{}] already exists", redisConfig.index());
+          log.debug("Index [{}] already exists", awsS3Config.index());
           return Maybe.empty();
         })
       )
@@ -141,7 +141,7 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Request createIndexRequest(String index) {
-    var storeConfig = redisConfig.vectorStoreConfig();
+    var storeConfig = awsS3Config.vectorStoreConfig();
 
     boolean isHnsw = HNSW.equals(properties.indexType());
 
@@ -149,7 +149,7 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
 
     Request ftCreateRequest = Request
       .cmd(Command.FT_CREATE)
-      .arg(redisConfig.index())
+      .arg(awsS3Config.index())
       .arg(ON)
       .arg(JSON)
       .arg(PREFIX)
@@ -210,14 +210,14 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
   private Redis buildClient() throws URISyntaxException {
     var clientOptions = new RedisOptions();
     clientOptions.setConnectionString(getUri().toASCIIString());
-    clientOptions.setMaxPoolSize(redisConfig.maxPoolSize());
+    clientOptions.setMaxPoolSize(awsS3Config.maxPoolSize());
 
     return Redis.createClient(vertx.getDelegate(), clientOptions);
   }
 
   private URI getUri() throws URISyntaxException {
-    URI uri = new URI(redisConfig.url());
-    if (notEmpty(redisConfig.username()) && notEmpty(redisConfig.password())) {
+    URI uri = new URI(awsS3Config.url());
+    if (notEmpty(awsS3Config.username()) && notEmpty(awsS3Config.password())) {
       return getUsernameAndPasswordUri(uri);
     }
     return uri;
@@ -230,7 +230,7 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
   private URI getUsernameAndPasswordUri(URI u) throws URISyntaxException {
     return new URI(
       u.getScheme(),
-      redisConfig.username() + ":" + redisConfig.password(),
+      awsS3Config.username() + ":" + awsS3Config.password(),
       u.getHost(),
       u.getPort(),
       u.getPath(),
@@ -240,7 +240,7 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
   }
 
   private String getFinalPrefixName() {
-    return redisConfig.prefix() + ":";
+    return awsS3Config.prefix() + ":";
   }
 
   private String getVectorAlgorithm() {
@@ -261,7 +261,7 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
   @Override
   public Completable add(VectorEntity vectorEntity) {
     if (properties.readOnly()) {
-      log.debug("AiVectorStoreRedisResource.add is read-only");
+      log.debug("AiVectorStoreAWSS3Resource.add is read-only");
       return Completable.complete();
     }
     Map<String, Object> doc = new HashMap<>();
@@ -294,7 +294,7 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public Flowable<VectorResult> findRelevant(VectorEntity vectorEntity) {
-    var vectorType = redisConfig.vectorStoreConfig().vectorType();
+    var vectorType = awsS3Config.vectorStoreConfig().vectorType();
 
     return Maybe
       .fromCallable(() -> vectorType.toBytes(vectorEntity.vector()))
@@ -316,7 +316,7 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
               documents.add(
                 new Document(
                   response.get(ID_ATTR).toString(),
-                  extraAttributes.get(redisConfig.scoreField()).toFloat(),
+                  extraAttributes.get(awsS3Config.scoreField()).toFloat(),
                   getMetadata(extraAttributes)
                 )
               );
@@ -364,9 +364,9 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
   }
 
   public Request buildSearchRequest(VectorEntity vectorEntity, byte[] byteVector) {
-    String queryString = redisConfig.query();
-    String indexName = redisConfig.index();
-    String scoreField = redisConfig.scoreField();
+    String queryString = awsS3Config.query();
+    String indexName = awsS3Config.index();
+    String scoreField = awsS3Config.scoreField();
 
     var request = Request
       .cmd(Command.FT_SEARCH)
@@ -403,7 +403,7 @@ public class AiVectorStoreRedisResource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public void remove(VectorEntity vectorEntity) {
-    throw new UnsupportedOperationException("AiVectorStoreRedisResource.remove not supported.");
+    throw new UnsupportedOperationException("AiVectorStoreAWSS3Resource.remove not supported.");
   }
 
   public Maybe<Response> rxSend(Request command) {
