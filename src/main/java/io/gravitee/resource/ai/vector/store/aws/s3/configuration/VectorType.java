@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.gravitee.resource.ai.vector.store.redis.configuration;
+package io.gravitee.resource.ai.vector.store.aws.s3.configuration;
 
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 

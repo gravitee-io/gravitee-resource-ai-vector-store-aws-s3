@@ -13,12 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.gravitee.resource.ai.vector.store.local;
+package io.gravitee.resource.ai.vector.store.aws.s3;
 
-import static io.gravitee.resource.ai.vector.store.api.IndexType.FLAT;
+/*import static io.gravitee.resource.ai.vector.store.api.IndexType.FLAT;
 import static io.gravitee.resource.ai.vector.store.api.IndexType.HNSW;
 import static io.gravitee.resource.ai.vector.store.api.Similarity.*;
-import static io.gravitee.resource.ai.vector.store.redis.configuration.VectorType.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -45,11 +44,13 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.context.ApplicationContext;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.utility.DockerImageName;*/
 
-class AiVectorStoreRedisResourceTest {
+class AiVectorStoreAWSS3ResourceTest {
 
-  static final GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis/redis-stack-server:latest"))
+  // Leaving below as initial example for writing the AWS S3 tests. TODO: Implement the actual tests for AWS S3 vector store. (DKT AUG 2025)
+
+  /*static final GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis/redis-stack-server:latest"))
     .withExposedPorts(6379);
 
   public static float[] vector1 = new float[] {
@@ -530,5 +531,5 @@ class AiVectorStoreRedisResourceTest {
     Field field = resource.getClass().getSuperclass().getSuperclass().getDeclaredField("configuration");
     field.setAccessible(true);
     field.set(resource, config);
-  }
+  }*/
 }

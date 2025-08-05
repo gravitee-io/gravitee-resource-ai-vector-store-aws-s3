@@ -20,7 +20,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>io.gravitee.resource.ai.vector.store</groupId>
-  <artifactId>gravitee-resource-ai-vector-store-redis</artifactId>
+  <artifactId>gravitee-resource-ai-vector-store-aws-s3</artifactId>
   <version>1.0.0</version>
 
   <name>Gravitee.io - Resource - AI Vector Store - Redis</name>
