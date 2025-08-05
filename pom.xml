@@ -16,7 +16,7 @@
 
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>io.gravitee.resource.ai.vector.store</groupId>
@@ -57,6 +57,7 @@
     <testcontainers-redis.version>2.2.2</testcontainers-redis.version>
     <gravitee-resource-ai-vector-store-api.version>1.0.0</gravitee-resource-ai-vector-store-api.version>
     <vertx.version>4.5.1</vertx.version>
+    <aws-java-sdk.version>2.31.26</aws-java-sdk.version>
   </properties>
 
   <dependencies>
@@ -66,6 +67,13 @@
       <groupId>org.springframework</groupId>
       <artifactId>spring-context</artifactId>
       <scope>provided</scope>
+    </dependency>
+
+    <!-- AWS SDK -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+      <version>${aws-java-sdk.version}</version>
     </dependency>
 
     <!-- Gravitee.io -->
@@ -190,20 +198,6 @@
       <plugin>
         <groupId>com.mycila</groupId>
         <artifactId>license-maven-plugin</artifactId>
-      </plugin>
-
-      <plugin>
-        <groupId>com.hubspot.maven.plugins</groupId>
-        <artifactId>prettier-maven-plugin</artifactId>
-        <configuration>
-          <prettierJavaVersion>${prettier-maven-plugin.prettierJavaVersion}</prettierJavaVersion>
-          <printWidth>125</printWidth>
-          <skip>${skip.validation}</skip>
-          <inputGlobs>
-            <inputGlob>src/{main,test}/**/*.java</inputGlob>
-            <inputGlob>.github/*.json</inputGlob>
-          </inputGlobs>
-        </configuration>
       </plugin>
 
       <plugin>
