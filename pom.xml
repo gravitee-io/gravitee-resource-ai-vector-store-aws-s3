@@ -1,0 +1,296 @@
+<!--
+
+    Copyright © 2015 The Gravitee team (http://gravitee.io)
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.gravitee.resource.ai.vector.store</groupId>
+  <artifactId>gravitee-resource-ai-vector-store-redis</artifactId>
+  <version>1.0.0</version>
+
+  <name>Gravitee.io - Resource - AI Vector Store - Redis</name>
+  <description>This is the Redis vector store implementation</description>
+  <packaging>jar</packaging>
+
+  <parent>
+    <groupId>io.gravitee</groupId>
+    <artifactId>gravitee-parent</artifactId>
+    <version>23.4.1</version>
+  </parent>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.gravitee</groupId>
+        <artifactId>gravitee-bom</artifactId>
+        <version>${gravitee-bom.version}</version>
+        <scope>import</scope>
+        <type>pom</type>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <properties>
+    <gravitee-bom.version>8.3.14</gravitee-bom.version>
+    <junit-jupiter.version>5.12.0</junit-jupiter.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <gravitee-resource-api.version>1.1.0</gravitee-resource-api.version>
+    <gravitee-inference-math-native.version>1.1.2</gravitee-inference-math-native.version>
+    <gravitee-node.version>7.10.0</gravitee-node.version>
+    <gravitee-common.version>4.7.0</gravitee-common.version>
+    <test.containers.version>1.21.3</test.containers.version>
+    <testcontainers-redis.version>2.2.2</testcontainers-redis.version>
+    <gravitee-resource-ai-vector-store-api.version>1.0.0</gravitee-resource-ai-vector-store-api.version>
+    <vertx.version>4.5.1</vertx.version>
+  </properties>
+
+  <dependencies>
+
+    <!-- Spring -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-context</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Gravitee.io -->
+    <dependency>
+      <groupId>io.reactivex.rxjava3</groupId>
+      <artifactId>rxjava</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>io.gravitee.resource</groupId>
+      <artifactId>gravitee-resource-api</artifactId>
+      <version>${gravitee-resource-api.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>io.gravitee.resource.ai.vector.store</groupId>
+      <artifactId>gravitee-resource-ai-vector-store-api</artifactId>
+      <version>${gravitee-resource-ai-vector-store-api.version}</version>
+    </dependency>
+
+    <!-- Lombok -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Vert.x -->
+    <dependency>
+      <groupId>io.vertx</groupId>
+      <artifactId>vertx-redis-client</artifactId>
+      <version>${vertx.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>io.vertx</groupId>
+          <artifactId>vertx-core</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>io.vertx</groupId>
+      <artifactId>vertx-core</artifactId>
+      <version>${vertx.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>io.vertx</groupId>
+      <artifactId>vertx-rx-java3</artifactId>
+      <version>${vertx.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-beans</artifactId>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-params</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.redis</groupId>
+      <artifactId>testcontainers-redis</artifactId>
+      <version>${testcontainers-redis.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <groupId>com.hubspot.maven.plugins</groupId>
+        <artifactId>prettier-maven-plugin</artifactId>
+        <configuration>
+          <prettierJavaVersion>${prettier-maven-plugin.prettierJavaVersion}</prettierJavaVersion>
+          <printWidth>125</printWidth>
+          <skip>${skip.validation}</skip>
+          <inputGlobs>
+            <inputGlob>src/{main,test}/**/*.java</inputGlob>
+            <inputGlob>.github/*.json</inputGlob>
+          </inputGlobs>
+        </configuration>
+        <executions>
+          <execution>
+            <phase>validate</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>com.mycila</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+      </plugin>
+
+      <plugin>
+        <groupId>com.hubspot.maven.plugins</groupId>
+        <artifactId>prettier-maven-plugin</artifactId>
+        <configuration>
+          <prettierJavaVersion>${prettier-maven-plugin.prettierJavaVersion}</prettierJavaVersion>
+          <printWidth>125</printWidth>
+          <skip>${skip.validation}</skip>
+          <inputGlobs>
+            <inputGlob>src/{main,test}/**/*.java</inputGlob>
+            <inputGlob>.github/*.json</inputGlob>
+          </inputGlobs>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>@{argLine} --enable-preview --add-opens java.base/java.lang=ALL-UNNAMED --add-opens
+            java.base/java.util=ALL-UNNAMED
+            --add-opens java.base/java.util.regex=ALL-UNNAMED --add-opens
+            java.base/java.util.stream=ALL-UNNAMED --add-opens java.base/java.net=ALL-UNNAMED
+          </argLine>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>report-aggregate</id>
+            <phase>test</phase>
+            <goals>
+              <goal>report-aggregate</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>properties-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>initialize</phase>
+            <id>load-plugin-properties</id>
+            <goals>
+              <goal>read-project-properties</goal>
+            </goals>
+            <configuration>
+              <files>
+                <file>${project.basedir}/src/main/resources/plugin.properties</file>
+              </files>
+              <quiet>false</quiet>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>${maven-assembly-plugin.version}</version>
+        <configuration>
+          <appendAssemblyId>false</appendAssemblyId>
+          <descriptors>
+            <descriptor>src/main/assembly/resource-assembly.xml</descriptor>
+          </descriptors>
+        </configuration>
+        <executions>
+          <execution>
+            <id>make-plugin-assembly</id>
+            <phase>package</phase>
+            <goals>
+              <goal>single</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <source>21</source>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

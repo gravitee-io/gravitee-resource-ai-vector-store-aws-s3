@@ -1,0 +1,293 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Vector Store Redis Configuration",
+  "type": "object",
+  "properties": {
+    "properties": {
+      "type": "object",
+      "title": "Vector Store Settings",
+      "description": "Defines the vector search behavior, similarity function, eviction strategy, and performance-related settings.",
+      "properties": {
+        "embeddingSize": {
+          "type": "integer",
+          "title": "Embedding Size",
+          "description": "Dimension of the embedding vectors. This must match the dimensionality used by the model generating embeddings.",
+          "minimum": 1,
+          "default": 384
+        },
+        "maxResults": {
+          "type": "integer",
+          "title": "Max Results",
+          "description": "Maximum number of results returned in a vector search query.",
+          "minimum": 1,
+          "default": 5
+        },
+        "similarity": {
+          "type": "string",
+          "title": "Similarity Function",
+          "description": "The distance metric used to compare embedding vectors. COSINE returns similarity between 0 and 1, DOT_PRODUCT is sensitive to vector magnitude, and EUCLIDEAN computes raw distance.",
+          "enum": [
+            "COSINE",
+            "EUCLIDEAN",
+            "DOT_PRODUCT"
+          ],
+          "default": "COSINE"
+        },
+        "threshold": {
+          "type": "number",
+          "title": "Threshold",
+          "description": "Minimum similarity score for a result to be considered relevant. For COSINE and DOT_PRODUCT, this ranges from 0 (least similar) to 1 (most similar). For EUCLIDEAN, lower is more similar.",
+          "default": "0.7"
+        },
+        "indexType": {
+          "type": "string",
+          "title": "Index type",
+          "enum": [
+            "FLAT",
+            "HNSW"
+          ],
+          "description": "Index type used for vector search.",
+          "default": "HNSW"
+        },
+        "readOnly": {
+          "type": "boolean",
+          "title": "Read-only",
+          "description": "If true, disables writes and enables read-only access to the index.",
+          "default": true
+        },
+        "allowEviction": {
+          "type": "boolean",
+          "title": "Allow Eviction",
+          "description": "Enable automatic eviction of old or unused entries from the vector store when readOnly is false.",
+          "default": false,
+          "gioConfig": {
+            "displayIf": {
+              "$eq": {
+                "value.properties.readOnly": false
+              }
+            }
+          }
+        },
+        "evictTime": {
+          "type": "integer",
+          "title": "Eviction Time",
+          "description": "Duration after which an unused vector entry can be evicted.",
+          "minimum": 1,
+          "default": 1,
+          "gioConfig": {
+            "displayIf": {
+              "$eq": {
+                "value.properties.allowEviction": true
+              }
+            }
+          }
+        },
+        "evictTimeUnit": {
+          "type": "string",
+          "title": "Eviction Time Unit",
+          "description": "Unit of time used for eviction duration. Defines how long unused vectors are retained.",
+          "enum": [
+            "MINUTES",
+            "HOURS",
+            "DAYS"
+          ],
+          "default": "HOURS",
+          "gioConfig": {
+            "displayIf": {
+              "$eq": {
+                "value.properties.allowEviction": true
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "embeddingSize",
+        "maxResults",
+        "similarity",
+        "threshold",
+        "indexType",
+        "readOnly"
+      ]
+    },
+    "redisConfig": {
+      "type": "object",
+      "title": "Redis Configuration",
+      "description": "Connection settings and template behavior for accessing the Redis vector store.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "title": "Redis URL",
+          "description": "Full Redis connection URI (e.g., redis://localhost:6379 or rediss://host:port for SSL).",
+          "default": "redis://localhost:6379",
+          "format": "uri"
+        },
+        "username": {
+          "type": "string",
+          "title": "Username",
+          "description": "Optional Redis username for authentication when using ACL."
+        },
+        "password": {
+          "type": "string",
+          "title": "Password",
+          "description": "Optional Password for authenticating with the Redis server.",
+          "format": "password"
+        },
+        "maxPoolSize": {
+          "type": "integer",
+          "title": "Max pool size",
+          "description": "Number of pooled connection the redis client can hold",
+          "minimum": 1,
+          "default": 6
+        },
+        "index": {
+          "type": "string",
+          "title": "Index name",
+          "description": "Name of the RedisSearch index where vector documents are stored."
+        },
+        "prefix": {
+          "type": "string",
+          "title": "Key Prefix",
+          "description": "Namespace prefix used to isolate vector keys and prevent collisions across applications."
+        },
+        "query": {
+          "type": "string",
+          "title": "Query Template",
+          "description": "Redis search query template used to fetch KNN results, optionally with filtering. Supports placeholders like $vector, $max_results, $retrieval_context_key and $similarity_score",
+          "default": "@retrieval_context_key:{\n\t$retrieval_context_key\n}=>[\n\tKNN $max_results @vector $vector AS score\n]",
+          "format": "gio-code-editor"
+        },
+        "scoreField": {
+          "type": "string",
+          "title": "Similarity Score field",
+          "description": "Name of the field used to sort results returned by the KNN query. Default is 'score'.",
+          "default": "score"
+        },
+        "vectorStoreConfig": {
+          "type": "object",
+          "title": "Redis Vector Store Configuration",
+          "description": "Performance and storage tuning options for Redis vector store backend.",
+          "required": [
+            "vectorType",
+            "initialCapacity"
+          ],
+          "properties": {
+            "vectorType": {
+              "type": "string",
+              "title": "Vector scalar type",
+              "description": "Precision of scalars in vector",
+              "enum": [
+                "BFLOAT16",
+                "FLOAT16",
+                "FLOAT32",
+                "FLOAT64"
+              ],
+              "default": "FLOAT32"
+            },
+            "initialCapacity": {
+              "type": "integer",
+              "title": "Initial Capacity",
+              "description": "Number of vectors to allocate memory for on initialization. Helps optimize memory if known in advance.",
+              "minimum": 0,
+              "default": 5,
+              "gioConfig": {
+                "displayIf": {
+                  "$eq": {
+                    "value.properties.readOnly": false
+                  }
+                }
+              }
+            },
+            "blockSize": {
+              "type": "integer",
+              "title": "Block Size",
+              "description": "Number of additional vectors allocated when resizing internal memory structures.",
+              "minimum": 1,
+              "default": 10,
+              "gioConfig": {
+                "displayIf": {
+                  "$eq": {
+                    "value.properties.indexType": "FLAT",
+                    "value.properties.readOnly": false
+                  }
+                }
+              }
+            },
+            "M": {
+              "type": "integer",
+              "title": "M",
+              "description": "Max number of outgoing edges (connections) for each node in a graph layer. On layer zero, the max number of connections will be 2 * M. Higher values increase accuracy, but also increase memory usage and index build time.",
+              "minimum": 0,
+              "default": 16,
+              "gioConfig": {
+                "displayIf": {
+                  "$eq": {
+                    "value.properties.indexType": "HNSW",
+                    "value.properties.readOnly": false
+                  }
+                }
+              }
+            },
+            "efConstruction": {
+              "type": "integer",
+              "title": "EF Construction",
+              "description": "Max number of connected neighbors to consider during graph building. Higher values increase accuracy, but also increase index build time.",
+              "minimum": 0,
+              "default": 200,
+              "gioConfig": {
+                "displayIf": {
+                  "$eq": {
+                    "value.properties.indexType": "HNSW",
+                    "value.properties.readOnly": false
+                  }
+                }
+              }
+            },
+            "efRuntime": {
+              "type": "integer",
+              "title": "EF Runtime",
+              "description": "Max top candidates during KNN search. Higher values increase accuracy, but also increase search latency.",
+              "minimum": 0,
+              "default": 10,
+              "gioConfig": {
+                "displayIf": {
+                  "$eq": {
+                    "value.properties.indexType": "HNSW",
+                    "value.properties.readOnly": false
+                  }
+                }
+              }
+            },
+            "epsilon": {
+              "type": "number",
+              "title": "Epsilon",
+              "description": "Relative factor that sets the boundaries in which a range query may search for candidates. That is, vector candidates whose distance from the query vector is radius * (1 + EPSILON) are potentially scanned, allowing more extensive search and more accurate results, at the expense of run time.",
+              "minimum": 0,
+              "default": 0.01,
+              "gioConfig": {
+                "displayIf": {
+                  "$eq": {
+                    "value.properties.indexType": "HNSW",
+                    "value.properties.readOnly": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "url",
+        "index",
+        "prefix",
+        "query",
+        "scoreField",
+        "vectorStoreConfig"
+      ]
+    }
+  },
+  "required": [
+    "properties",
+    "redisConfig"
+  ]
+}
