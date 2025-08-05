@@ -1,4 +1,4 @@
-# Gravitee Resource Redis AI Vector Store 
+# Gravitee Resource Redis AI Vector Store
 
 This resource provides vector search capabilities using **Redis** as the underlying vector store. It is designed to be integrated into AI pipelines that rely on semantic similarity, retrieval-augmented generation (RAG), or embedding-based search.
 
@@ -118,3 +118,4 @@ Use `$vector`, `$max_results`, and custom metadata variables (e.g. `$retrieval_c
 - Semantic Search
 - Chat history/context vector lookup
 - Multi-tenant vector indexing with key prefixes
+
