@@ -19,8 +19,8 @@ import io.gravitee.resource.ai.vector.store.api.AiVectorStoreProperties;
 import io.gravitee.resource.api.ResourceConfiguration;
 
 /**
- * @author Rémi SULTAN (remi.sultan at graviteesource.com)
+ * @author Derek Thompson (derek.thompson at graviteesource.com)
  * @author GraviteeSource Team
  */
-public record AiVectorStoreAWSS3Configuration(AiVectorStoreProperties properties, RedisConfiguration redisConfig)
+public record AiVectorStoreAWSS3Configuration(AiVectorStoreProperties properties, AWSS3Configuration awsS3Configuration)
   implements ResourceConfiguration {}
