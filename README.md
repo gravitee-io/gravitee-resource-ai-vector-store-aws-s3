@@ -17,7 +17,7 @@ To use this resource, register it with the following configuration:
   "enabled": true,
   "configuration": {
     "properties": {
-      "dimensions": 1024,
+      "embeddingSize": 1024,
       "maxResults": 10,
       "similarity": "COSINE",
       "threshold": 0.5,
@@ -169,7 +169,7 @@ public class S3VectorsRxJavaExample {
             .returnDistance(returnDistance);
 
         if (metadataFilter != null && !metadataFilter.isEmpty()) {
-            qb.filter(metadataFilter::toString); // only filterable keys allowed
+            qb.filter(metadataFilter);
         }
 
         CompletableFuture<List<QueryOutputVector>> fut = client
