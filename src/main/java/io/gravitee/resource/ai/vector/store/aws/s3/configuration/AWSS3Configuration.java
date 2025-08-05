@@ -28,5 +28,5 @@ public record AWSS3Configuration(
   String query,
   String scoreField,
   int maxPoolSize,
-  RedisVectorStoreConfiguration vectorStoreConfig
+  AWSS3VectorStoreConfiguration vectorStoreConfig
 ) {}
