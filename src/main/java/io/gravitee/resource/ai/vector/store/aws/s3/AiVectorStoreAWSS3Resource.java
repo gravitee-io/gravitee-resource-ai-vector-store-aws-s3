@@ -36,7 +36,14 @@ import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3vectors.S3VectorsAsyncClient;
 import software.amazon.awssdk.services.s3vectors.model.CreateIndexRequest;
+import software.amazon.awssdk.services.s3vectors.model.DeleteVectorsRequest;
 import software.amazon.awssdk.services.s3vectors.model.MetadataConfiguration;
+import software.amazon.awssdk.services.s3vectors.model.PutInputVector;
+import software.amazon.awssdk.services.s3vectors.model.PutVectorsRequest;
+import software.amazon.awssdk.services.s3vectors.model.VectorData;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * @author Derek Thompson (derek.thompson at graviteesource.com)
@@ -90,7 +97,26 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public Completable add(VectorEntity vectorEntity) {
-    throw new UnsupportedOperationException("Not yet implemented");
+    if (properties.readOnly()) {
+      log.debug("AiVectorStoreAWSS3Resource.add is read-only");
+      return Completable.complete();
+    }
+
+    float[] vectorArr = vectorEntity.vector();
+    List<Float> vectorList = new ArrayList<>(vectorArr.length);
+    for (float v : vectorArr) vectorList.add(v);
+    VectorData vectorData = VectorData.fromFloat32(vectorList);
+    PutInputVector putVector = PutInputVector.builder()
+      .key(vectorEntity.id())
+      .data(vectorData)
+      .build();
+    PutVectorsRequest putRequest = PutVectorsRequest.builder()
+      .vectorBucketName(awsS3Config.vectorBucketName())
+      .indexName(awsS3Config.vectorIndexName())
+      .vectors(putVector)
+      .build();
+    return Completable.fromFuture(s3VectorsClient.putVectors(putRequest))
+      .doOnComplete(() -> log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
   }
 
   @Override
@@ -100,7 +126,23 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public void remove(VectorEntity vectorEntity) {
-    throw new UnsupportedOperationException("Not yet implemented");
+    if (properties.readOnly()) {
+      log.debug("AiVectorStoreAWSS3Resource.remove is read-only");
+      return;
+    }
+    DeleteVectorsRequest deleteRequest = DeleteVectorsRequest.builder()
+      .vectorBucketName(awsS3Config.vectorBucketName())
+      .indexName(awsS3Config.vectorIndexName())
+      .keys(vectorEntity.id())
+      .build();
+    s3VectorsClient.deleteVectors(deleteRequest)
+      .whenComplete((resp, err) -> {
+        if (err != null) {
+          log.error("Error removing vector {} from AWS S3 Vectors", vectorEntity.id(), err);
+        } else {
+          log.debug("Vector {} removed from AWS S3 Vectors.", vectorEntity.id());
+        }
+      });
   }
 
   // --- Private helper methods below ---
