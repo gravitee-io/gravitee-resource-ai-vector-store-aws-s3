@@ -81,6 +81,10 @@
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>s3vectors</artifactId>
     </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+    </dependency>
 
     <!-- Gravitee.io -->
     <dependency>
