@@ -8,9 +8,9 @@
       "title": "Vector Store Settings",
       "description": "Defines the vector search behavior, similarity function, and performance-related settings.",
       "properties": {
-        "dimensions": {
+        "embeddingSize": {
           "type": "integer",
-          "title": "Dimensions",
+          "title": "Embedding Size",
           "description": "Number of embedding dimensions (must match your model and index).",
           "minimum": 1,
           "default": 1024
@@ -46,7 +46,7 @@
         }
       },
       "required": [
-        "dimensions",
+        "embeddingSize",
         "maxResults",
         "similarity",
         "threshold",

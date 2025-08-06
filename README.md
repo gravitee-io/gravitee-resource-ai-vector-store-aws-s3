@@ -50,7 +50,7 @@ To use this resource, register it with the following configuration:
 
 | Field         | Description                                                                 |
 |---------------|-----------------------------------------------------------------------------|
-| `dimensions`  | Number of embedding dimensions (must match your model and index)            |
+| `embeddingSize`  | Number of embedding dimensions (must match your model and index)            |
 | `maxResults`  | Number of nearest neighbor vectors to return per query                      |
 | `similarity`  | `COSINE` or `EUCLIDEAN` — must match index configuration                    |
 | `threshold`   | Minimum similarity/distance score to return results                         |
