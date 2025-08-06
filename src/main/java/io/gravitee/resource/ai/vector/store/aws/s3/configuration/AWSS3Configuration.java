@@ -1,5 +1,5 @@
 /*
- * Copyright © 2015 The Gravitee team (http://gravitee.io)
+ * Copyright © 2015 The Gravitee team (http://graviteesource.com)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,23 @@
 package io.gravitee.resource.ai.vector.store.aws.s3.configuration;
 
 /**
- * @author Rémi SULTAN (remi.sultan at graviteesource.com)
+ * @author Derek Thompson (derek.thompson at graviteesource.com)
  * @author GraviteeSource Team
  */
 public record AWSS3Configuration(
-  String url,
-  String username,
-  String password,
-  String index,
-  String prefix,
-  String query,
-  String scoreField,
-  int maxPoolSize,
-  AWSS3VectorStoreConfiguration vectorStoreConfig
+  String vectorBucketName,
+  String vectorIndexName,
+  String encryption,
+  String kmsKeyId,
+  String distanceMetric,
+  String region,
+  MetadataSchema metadataSchema,
+  String awsAccessKeyId,
+  String awsSecretAccessKey,
+  String sessionToken
+) {}
+
+record MetadataSchema(
+  java.util.List<String> filterable,
+  java.util.List<String> nonFilterable
 ) {}
