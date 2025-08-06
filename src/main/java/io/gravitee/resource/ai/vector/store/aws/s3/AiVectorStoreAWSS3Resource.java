@@ -1,5 +1,5 @@
 /*
- * Copyright © 2015 The Gravitee team (http://graviteesource.com)
+ * Copyright © 2015 The Gravitee team (http://gravitee.io)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,11 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
+import software.amazon.awssdk.services.s3.model.PutBucketEncryptionRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.ServerSideEncryptionByDefault;
+import software.amazon.awssdk.services.s3.model.ServerSideEncryptionConfiguration;
+import software.amazon.awssdk.services.s3.model.ServerSideEncryptionRule;
 import software.amazon.awssdk.services.s3vectors.S3VectorsAsyncClient;
 import software.amazon.awssdk.services.s3vectors.model.CreateIndexRequest;
 import software.amazon.awssdk.services.s3vectors.model.DeleteVectorsRequest;
@@ -201,9 +205,39 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     if (awsS3Config.region() != null) {
       builder.createBucketConfiguration(b -> b.locationConstraint(awsS3Config.region()));
     }
-    return Completable
+    // Create the bucket first
+    Completable create = Completable
       .fromFuture(s3AsyncClient.createBucket(builder.build()))
       .doOnComplete(() -> log.info("Created S3 bucket: {}", bucketName));
+
+    // If SSE-KMS is requested, set default encryption after bucket creation
+    if (
+      "SSE-KMS".equalsIgnoreCase(awsS3Config.encryption()) &&
+      awsS3Config.kmsKeyId() != null &&
+      !awsS3Config.kmsKeyId().isBlank()
+    ) {
+      ServerSideEncryptionByDefault sseByDefault = ServerSideEncryptionByDefault
+        .builder()
+        .sseAlgorithm("aws:kms")
+        .kmsMasterKeyID(awsS3Config.kmsKeyId())
+        .build();
+      ServerSideEncryptionRule sseRule = ServerSideEncryptionRule
+        .builder()
+        .applyServerSideEncryptionByDefault(sseByDefault)
+        .build();
+      ServerSideEncryptionConfiguration sseConfig = ServerSideEncryptionConfiguration.builder().rules(sseRule).build();
+      PutBucketEncryptionRequest encryptionRequest = PutBucketEncryptionRequest
+        .builder()
+        .bucket(bucketName)
+        .serverSideEncryptionConfiguration(sseConfig)
+        .build();
+      return create.andThen(
+        Completable
+          .fromFuture(s3AsyncClient.putBucketEncryption(encryptionRequest))
+          .doOnComplete(() -> log.info("Set SSE-KMS encryption for bucket: {}", bucketName))
+      );
+    }
+    return create;
   }
 
   private Single<Boolean> createIndex() {
