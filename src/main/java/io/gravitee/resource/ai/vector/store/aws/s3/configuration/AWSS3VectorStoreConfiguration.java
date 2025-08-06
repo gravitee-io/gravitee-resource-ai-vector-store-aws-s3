@@ -16,15 +16,13 @@
 package io.gravitee.resource.ai.vector.store.aws.s3.configuration;
 
 /**
- * @author Rémi SULTAN (remi.sultan at graviteesource.com)
+ * @author Derek Thompson (derek.thompson at graviteesource.com)
  * @author GraviteeSource Team
  */
 public record AWSS3VectorStoreConfiguration(
-  VectorType vectorType,
-  int M,
-  int efConstruction,
-  int efRuntime,
-  float epsilon,
-  int initialCapacity,
-  int blockSize
+  int dimensions,
+  int maxResults,
+  String similarity,
+  double threshold,
+  boolean readOnly
 ) {}
