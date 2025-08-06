@@ -42,6 +42,13 @@
         <scope>import</scope>
         <type>pom</type>
       </dependency>
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${aws.java.sdk.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -57,7 +64,7 @@
     <testcontainers-redis.version>2.2.2</testcontainers-redis.version>
     <gravitee-resource-ai-vector-store-api.version>1.0.0</gravitee-resource-ai-vector-store-api.version>
     <vertx.version>4.5.1</vertx.version>
-    <aws-java-sdk.version>2.31.26</aws-java-sdk.version>
+    <aws.java.sdk.version>2.32.16</aws.java.sdk.version>
   </properties>
 
   <dependencies>
@@ -72,8 +79,7 @@
     <!-- AWS SDK -->
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
-      <artifactId>s3</artifactId>
-      <version>${aws-java-sdk.version}</version>
+      <artifactId>s3vectors</artifactId>
     </dependency>
 
     <!-- Gravitee.io -->
