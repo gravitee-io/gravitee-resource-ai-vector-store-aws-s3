@@ -20,7 +20,7 @@ package io.gravitee.resource.ai.vector.store.aws.s3.configuration;
  * @author GraviteeSource Team
  */
 public record AWSS3VectorStoreConfiguration(
-  int dimensions,
+  int embeddingSize,
   int maxResults,
   String similarity,
   double threshold,

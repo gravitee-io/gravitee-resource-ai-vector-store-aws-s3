@@ -29,15 +29,6 @@ public record AWSS3Configuration(
   MetadataSchema metadataSchema,
   String awsAccessKeyId,
   String awsSecretAccessKey,
-  String sessionToken
+  String sessionToken,
+  AWSS3VectorStoreConfiguration awsS3VectorStoreConfiguration
 ) {}
-
-record MetadataSchema(
-  java.util.List<String> filterable,
-  java.util.List<String> nonFilterable
-) {}
-
-enum DistanceMetric {
-  COSINE,
-  EUCLIDEAN
-}

@@ -47,7 +47,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;*/
 
 class AiVectorStoreAWSS3ResourceTest {
-
   // Leaving below as initial example for writing the AWS S3 tests. TODO: Implement the actual tests for AWS S3 vector store. (DKT AUG 2025)
 
   /*static final GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis/redis-stack-server:latest"))
