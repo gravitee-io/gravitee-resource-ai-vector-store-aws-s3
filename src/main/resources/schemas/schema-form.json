@@ -1,293 +1,150 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "AI Vector Store AWS S3 Configuration",
+  "title": "AI Vector Store AWS S3 Vectors Configuration",
   "type": "object",
   "properties": {
     "properties": {
       "type": "object",
       "title": "Vector Store Settings",
-      "description": "Defines the vector search behavior, similarity function, eviction strategy, and performance-related settings.",
+      "description": "Defines the vector search behavior, similarity function, and performance-related settings.",
       "properties": {
-        "embeddingSize": {
+        "dimensions": {
           "type": "integer",
-          "title": "Embedding Size",
-          "description": "Dimension of the embedding vectors. This must match the dimensionality used by the model generating embeddings.",
+          "title": "Dimensions",
+          "description": "Number of embedding dimensions (must match your model and index).",
           "minimum": 1,
-          "default": 384
+          "default": 1024
         },
         "maxResults": {
           "type": "integer",
           "title": "Max Results",
-          "description": "Maximum number of results returned in a vector search query.",
+          "description": "Number of nearest neighbor vectors to return per query.",
           "minimum": 1,
-          "default": 5
+          "default": 10
         },
         "similarity": {
           "type": "string",
           "title": "Similarity Function",
-          "description": "The distance metric used to compare embedding vectors. COSINE returns similarity between 0 and 1, DOT_PRODUCT is sensitive to vector magnitude, and EUCLIDEAN computes raw distance.",
+          "description": "The distance metric used to compare embedding vectors. Must match the index configuration.",
           "enum": [
             "COSINE",
-            "EUCLIDEAN",
-            "DOT_PRODUCT"
+            "EUCLIDEAN"
           ],
           "default": "COSINE"
         },
         "threshold": {
           "type": "number",
           "title": "Threshold",
-          "description": "Minimum similarity score for a result to be considered relevant. For COSINE and DOT_PRODUCT, this ranges from 0 (least similar) to 1 (most similar). For EUCLIDEAN, lower is more similar.",
-          "default": "0.7"
-        },
-        "indexType": {
-          "type": "string",
-          "title": "Index type",
-          "enum": [
-            "FLAT",
-            "HNSW"
-          ],
-          "description": "Index type used for vector search.",
-          "default": "HNSW"
+          "description": "Minimum similarity/distance score to return results.",
+          "default": 0.5
         },
         "readOnly": {
           "type": "boolean",
           "title": "Read-only",
           "description": "If true, disables writes and enables read-only access to the index.",
-          "default": true
-        },
-        "allowEviction": {
-          "type": "boolean",
-          "title": "Allow Eviction",
-          "description": "Enable automatic eviction of old or unused entries from the vector store when readOnly is false.",
-          "default": false,
-          "gioConfig": {
-            "displayIf": {
-              "$eq": {
-                "value.properties.readOnly": false
-              }
-            }
-          }
-        },
-        "evictTime": {
-          "type": "integer",
-          "title": "Eviction Time",
-          "description": "Duration after which an unused vector entry can be evicted.",
-          "minimum": 1,
-          "default": 1,
-          "gioConfig": {
-            "displayIf": {
-              "$eq": {
-                "value.properties.allowEviction": true
-              }
-            }
-          }
-        },
-        "evictTimeUnit": {
-          "type": "string",
-          "title": "Eviction Time Unit",
-          "description": "Unit of time used for eviction duration. Defines how long unused vectors are retained.",
-          "enum": [
-            "MINUTES",
-            "HOURS",
-            "DAYS"
-          ],
-          "default": "HOURS",
-          "gioConfig": {
-            "displayIf": {
-              "$eq": {
-                "value.properties.allowEviction": true
-              }
-            }
-          }
+          "default": false
         }
       },
       "required": [
-        "embeddingSize",
+        "dimensions",
         "maxResults",
         "similarity",
         "threshold",
-        "indexType",
         "readOnly"
       ]
     },
-    "redisConfig": {
+    "s3VectorsConfig": {
       "type": "object",
-      "title": "Redis Configuration",
-      "description": "Connection settings and template behavior for accessing the Redis vector store.",
+      "title": "AWS S3 Vectors Configuration",
+      "description": "Connection and index settings for AWS S3 Vectors.",
       "properties": {
-        "url": {
+        "vectorBucketName": {
           "type": "string",
-          "title": "Redis URL",
-          "description": "Full Redis connection URI (e.g., redis://localhost:6379 or rediss://host:port for SSL).",
-          "default": "redis://localhost:6379",
-          "format": "uri"
+          "title": "S3 Vector Bucket Name",
+          "description": "S3 vector bucket name (3–63 lowercase, numbers, hyphens)."
         },
-        "username": {
+        "vectorIndexName": {
           "type": "string",
-          "title": "Username",
-          "description": "Optional Redis username for authentication when using ACL."
+          "title": "Vector Index Name",
+          "description": "Index name within the bucket; immutable after creation."
         },
-        "password": {
+        "encryption": {
           "type": "string",
-          "title": "Password",
-          "description": "Optional Password for authenticating with the Redis server.",
+          "title": "Encryption",
+          "description": "S3 server-side encryption type.",
+          "enum": ["SSE-S3", "SSE-KMS"],
+          "default": "SSE-S3"
+        },
+        "kmsKeyId": {
+          "type": ["string", "null"],
+          "title": "KMS Key ARN",
+          "description": "ARN of the KMS key if using SSE-KMS.",
+          "default": null
+        },
+        "distanceMetric": {
+          "type": "string",
+          "title": "Distance Metric",
+          "description": "Distance metric for the index. Must match the similarity function.",
+          "enum": ["COSINE", "EUCLIDEAN"],
+          "default": "COSINE"
+        },
+        "region": {
+          "type": "string",
+          "title": "AWS Region",
+          "description": "AWS region where the bucket/index exist."
+        },
+        "metadataSchema": {
+          "type": "object",
+          "title": "Metadata Schema",
+          "description": "Defines which metadata keys are filterable/non-filterable.",
+          "properties": {
+            "filterable": {
+              "type": "array",
+              "title": "Filterable Metadata Keys",
+              "items": { "type": "string" },
+              "default": []
+            },
+            "nonFilterable": {
+              "type": "array",
+              "title": "Non-Filterable Metadata Keys",
+              "items": { "type": "string" },
+              "default": []
+            }
+          },
+          "required": ["filterable", "nonFilterable"]
+        },
+        "awsAccessKeyId": {
+          "type": "string",
+          "title": "AWS Access Key ID",
+          "description": "AWS access key ID for authentication."
+        },
+        "awsSecretAccessKey": {
+          "type": "string",
+          "title": "AWS Secret Access Key",
+          "description": "AWS secret access key for authentication.",
           "format": "password"
         },
-        "maxPoolSize": {
-          "type": "integer",
-          "title": "Max pool size",
-          "description": "Number of pooled connection the redis client can hold",
-          "minimum": 1,
-          "default": 6
-        },
-        "index": {
-          "type": "string",
-          "title": "Index name",
-          "description": "Name of the RedisSearch index where vector documents are stored."
-        },
-        "prefix": {
-          "type": "string",
-          "title": "Key Prefix",
-          "description": "Namespace prefix used to isolate vector keys and prevent collisions across applications."
-        },
-        "query": {
-          "type": "string",
-          "title": "Query Template",
-          "description": "Redis search query template used to fetch KNN results, optionally with filtering. Supports placeholders like $vector, $max_results, $retrieval_context_key and $similarity_score",
-          "default": "@retrieval_context_key:{\n\t$retrieval_context_key\n}=>[\n\tKNN $max_results @vector $vector AS score\n]",
-          "format": "gio-code-editor"
-        },
-        "scoreField": {
-          "type": "string",
-          "title": "Similarity Score field",
-          "description": "Name of the field used to sort results returned by the KNN query. Default is 'score'.",
-          "default": "score"
-        },
-        "vectorStoreConfig": {
-          "type": "object",
-          "title": "Redis Vector Store Configuration",
-          "description": "Performance and storage tuning options for Redis vector store backend.",
-          "required": [
-            "vectorType",
-            "initialCapacity"
-          ],
-          "properties": {
-            "vectorType": {
-              "type": "string",
-              "title": "Vector scalar type",
-              "description": "Precision of scalars in vector",
-              "enum": [
-                "BFLOAT16",
-                "FLOAT16",
-                "FLOAT32",
-                "FLOAT64"
-              ],
-              "default": "FLOAT32"
-            },
-            "initialCapacity": {
-              "type": "integer",
-              "title": "Initial Capacity",
-              "description": "Number of vectors to allocate memory for on initialization. Helps optimize memory if known in advance.",
-              "minimum": 0,
-              "default": 5,
-              "gioConfig": {
-                "displayIf": {
-                  "$eq": {
-                    "value.properties.readOnly": false
-                  }
-                }
-              }
-            },
-            "blockSize": {
-              "type": "integer",
-              "title": "Block Size",
-              "description": "Number of additional vectors allocated when resizing internal memory structures.",
-              "minimum": 1,
-              "default": 10,
-              "gioConfig": {
-                "displayIf": {
-                  "$eq": {
-                    "value.properties.indexType": "FLAT",
-                    "value.properties.readOnly": false
-                  }
-                }
-              }
-            },
-            "M": {
-              "type": "integer",
-              "title": "M",
-              "description": "Max number of outgoing edges (connections) for each node in a graph layer. On layer zero, the max number of connections will be 2 * M. Higher values increase accuracy, but also increase memory usage and index build time.",
-              "minimum": 0,
-              "default": 16,
-              "gioConfig": {
-                "displayIf": {
-                  "$eq": {
-                    "value.properties.indexType": "HNSW",
-                    "value.properties.readOnly": false
-                  }
-                }
-              }
-            },
-            "efConstruction": {
-              "type": "integer",
-              "title": "EF Construction",
-              "description": "Max number of connected neighbors to consider during graph building. Higher values increase accuracy, but also increase index build time.",
-              "minimum": 0,
-              "default": 200,
-              "gioConfig": {
-                "displayIf": {
-                  "$eq": {
-                    "value.properties.indexType": "HNSW",
-                    "value.properties.readOnly": false
-                  }
-                }
-              }
-            },
-            "efRuntime": {
-              "type": "integer",
-              "title": "EF Runtime",
-              "description": "Max top candidates during KNN search. Higher values increase accuracy, but also increase search latency.",
-              "minimum": 0,
-              "default": 10,
-              "gioConfig": {
-                "displayIf": {
-                  "$eq": {
-                    "value.properties.indexType": "HNSW",
-                    "value.properties.readOnly": false
-                  }
-                }
-              }
-            },
-            "epsilon": {
-              "type": "number",
-              "title": "Epsilon",
-              "description": "Relative factor that sets the boundaries in which a range query may search for candidates. That is, vector candidates whose distance from the query vector is radius * (1 + EPSILON) are potentially scanned, allowing more extensive search and more accurate results, at the expense of run time.",
-              "minimum": 0,
-              "default": 0.01,
-              "gioConfig": {
-                "displayIf": {
-                  "$eq": {
-                    "value.properties.indexType": "HNSW",
-                    "value.properties.readOnly": false
-                  }
-                }
-              }
-            }
-          }
+        "sessionToken": {
+          "type": ["string", "null"],
+          "title": "AWS Session Token",
+          "description": "AWS session token (optional).",
+          "default": null
         }
       },
       "required": [
-        "url",
-        "index",
-        "prefix",
-        "query",
-        "scoreField",
-        "vectorStoreConfig"
+        "vectorBucketName",
+        "vectorIndexName",
+        "encryption",
+        "distanceMetric",
+        "region",
+        "metadataSchema",
+        "awsAccessKeyId",
+        "awsSecretAccessKey"
       ]
     }
   },
   "required": [
     "properties",
-    "redisConfig"
+    "s3VectorsConfig"
   ]
 }
