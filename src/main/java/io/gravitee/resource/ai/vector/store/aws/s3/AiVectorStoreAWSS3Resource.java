@@ -144,8 +144,8 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         float score = normalizeScore(result.distance());
         return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
       })
-      .sorted((a, b) -> Float.compare(b.score(), a.score()))
-      .filter(result -> result.score() >= properties.threshold());
+      .filter(result -> result.score() >= properties.threshold())
+      .sorted((a, b) -> Float.compare(b.score(), a.score()));
   }
 
   @Override
