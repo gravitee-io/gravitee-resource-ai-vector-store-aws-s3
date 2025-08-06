@@ -26,9 +26,14 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.vertx.rxjava3.core.Vertx;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
+import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3vectors.S3VectorsAsyncClient;
 import software.amazon.awssdk.services.s3vectors.model.CreateIndexRequest;
 import software.amazon.awssdk.services.s3vectors.model.MetadataConfiguration;
@@ -43,6 +48,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   private AWSS3Configuration awsS3Config;
   private AiVectorStoreProperties properties;
   private S3VectorsAsyncClient s3VectorsClient;
+  private S3AsyncClient s3AsyncClient;
   private Vertx vertx;
 
   @Override
@@ -51,47 +57,91 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     vertx = getBean(Vertx.class);
     properties = super.configuration().properties();
     awsS3Config = super.configuration().awsS3Configuration();
-    // Initialize S3VectorsAsyncClient with credentials
-    S3VectorsAsyncClient s3VectorsClientTmp;
+    // Initialize S3AsyncClient for bucket operations
+    var s3Builder = S3AsyncClient.builder().region(Region.of(awsS3Config.region()));
+    s3Builder.credentialsProvider(
+      buildAwsCredentialsProvider(
+        awsS3Config.awsAccessKeyId(),
+        awsS3Config.awsSecretAccessKey(),
+        awsS3Config.sessionToken()
+      )
+    );
+    s3AsyncClient = s3Builder.build();
+    // Initialize S3VectorsAsyncClient for vector index operations
     var builder = S3VectorsAsyncClient.builder().region(Region.of(awsS3Config.region()));
-    if (awsS3Config.sessionToken() != null && !awsS3Config.sessionToken().isEmpty()) {
-      builder.credentialsProvider(
-        StaticCredentialsProvider.create(
-          AwsSessionCredentials.create(
-            awsS3Config.awsAccessKeyId(),
-            awsS3Config.awsSecretAccessKey(),
-            awsS3Config.sessionToken()
-          )
-        )
-      );
-    } else {
-      builder.credentialsProvider(
-        StaticCredentialsProvider.create(
-          AwsBasicCredentials.create(awsS3Config.awsAccessKeyId(), awsS3Config.awsSecretAccessKey())
-        )
-      );
-    }
-    s3VectorsClientTmp = builder.build();
-    this.s3VectorsClient = s3VectorsClientTmp;
+    builder.credentialsProvider(
+      buildAwsCredentialsProvider(
+        awsS3Config.awsAccessKeyId(),
+        awsS3Config.awsSecretAccessKey(),
+        awsS3Config.sessionToken()
+      )
+    );
+    this.s3VectorsClient = builder.build();
     if (properties.readOnly()) {
       log.debug("AiVectorStoreAWSS3Resource is read-only");
     } else {
-      createIndex()
+      ensureBucketAndIndex()
         .subscribeOn(Schedulers.io())
-        .subscribe(
-          success -> log.debug("AWS S3 Vectors index created or already exists."),
-          error -> log.error("Error creating AWS S3 Vectors index", error)
-        );
+        .doOnComplete(() -> log.debug("AWS S3 bucket and Vectors index ready."))
+        .doOnError(error -> log.error("Error ensuring AWS S3 bucket/index", error))
+        .subscribe();
     }
   }
 
   @Override
-  public void doStop() throws Exception {
-    super.doStop();
-    if (s3VectorsClient != null) {
-      s3VectorsClient.close();
-      s3VectorsClient = null;
+  public Completable add(VectorEntity vectorEntity) {
+    throw new UnsupportedOperationException("Not yet implemented");
+  }
+
+  @Override
+  public Flowable<VectorResult> findRelevant(VectorEntity queryEntity) {
+    throw new UnsupportedOperationException("Not yet implemented");
+  }
+
+  @Override
+  public void remove(VectorEntity vectorEntity) {
+    throw new UnsupportedOperationException("Not yet implemented");
+  }
+
+  // --- Private helper methods below ---
+
+  private AwsCredentialsProvider buildAwsCredentialsProvider(String accessKeyId, String secretAccessKey, String sessionToken) {
+    if (sessionToken != null && !sessionToken.isEmpty()) {
+      return StaticCredentialsProvider.create(
+        AwsSessionCredentials.create(accessKeyId, secretAccessKey, sessionToken)
+      );
+    } else {
+      return StaticCredentialsProvider.create(
+        AwsBasicCredentials.create(accessKeyId, secretAccessKey)
+      );
     }
+  }
+
+  private Completable ensureBucketAndIndex() {
+    return bucketExists(awsS3Config.vectorBucketName())
+      .onErrorResumeNext(e -> {
+        if (e instanceof S3Exception s3e && s3e.statusCode() == 404) {
+          return createBucket(awsS3Config.vectorBucketName());
+        }
+        return Completable.error(e);
+      })
+      .andThen(createIndex().ignoreElement());
+  }
+
+  private Completable bucketExists(String bucketName) {
+    return Completable.fromFuture(
+      s3AsyncClient.headBucket(HeadBucketRequest.builder().bucket(bucketName).build())
+    );
+  }
+
+  private Completable createBucket(String bucketName) {
+    CreateBucketRequest.Builder builder = CreateBucketRequest.builder().bucket(bucketName);
+    if (awsS3Config.region() != null) {
+      builder.createBucketConfiguration(b -> b.locationConstraint(awsS3Config.region()));
+    }
+    return Completable.fromFuture(
+      s3AsyncClient.createBucket(builder.build())
+    ).doOnComplete(() -> log.info("Created S3 bucket: {}", bucketName));
   }
 
   private Single<Boolean> createIndex() {
@@ -118,20 +168,5 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         log.warn("Index may already exist or could not be created: {}", e.getMessage());
         return false;
       });
-  }
-
-  @Override
-  public Completable add(VectorEntity vectorEntity) {
-    throw new UnsupportedOperationException("Not yet implemented");
-  }
-
-  @Override
-  public Flowable<VectorResult> findRelevant(VectorEntity queryEntity) {
-    throw new UnsupportedOperationException("Not yet implemented");
-  }
-
-  @Override
-  public void remove(VectorEntity vectorEntity) {
-    throw new UnsupportedOperationException("Not yet implemented");
   }
 }
