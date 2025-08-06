@@ -24,7 +24,7 @@ public record AWSS3Configuration(
   String vectorIndexName,
   String encryption,
   String kmsKeyId,
-  String distanceMetric,
+  DistanceMetric distanceMetric,
   String region,
   MetadataSchema metadataSchema,
   String awsAccessKeyId,
@@ -36,3 +36,8 @@ record MetadataSchema(
   java.util.List<String> filterable,
   java.util.List<String> nonFilterable
 ) {}
+
+enum DistanceMetric {
+  COSINE,
+  EUCLIDEAN
+}
