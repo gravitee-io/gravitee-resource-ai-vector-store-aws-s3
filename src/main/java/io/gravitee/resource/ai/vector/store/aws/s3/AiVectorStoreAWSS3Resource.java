@@ -20,10 +20,11 @@ import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3Configurat
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AiVectorStoreAWSS3Configuration;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
-import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
-import io.vertx.rxjava3.core.Vertx;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -40,10 +41,8 @@ import software.amazon.awssdk.services.s3vectors.model.DeleteVectorsRequest;
 import software.amazon.awssdk.services.s3vectors.model.MetadataConfiguration;
 import software.amazon.awssdk.services.s3vectors.model.PutInputVector;
 import software.amazon.awssdk.services.s3vectors.model.PutVectorsRequest;
+import software.amazon.awssdk.services.s3vectors.model.QueryVectorsRequest;
 import software.amazon.awssdk.services.s3vectors.model.VectorData;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * @author Derek Thompson (derek.thompson at graviteesource.com)
@@ -56,32 +55,25 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   private AiVectorStoreProperties properties;
   private S3VectorsAsyncClient s3VectorsClient;
   private S3AsyncClient s3AsyncClient;
-  private Vertx vertx;
 
   @Override
   public void doStart() throws Exception {
     super.doStart();
-    vertx = getBean(Vertx.class);
+
     properties = super.configuration().properties();
     awsS3Config = super.configuration().awsS3Configuration();
+
     // Initialize S3AsyncClient for bucket operations
     var s3Builder = S3AsyncClient.builder().region(Region.of(awsS3Config.region()));
     s3Builder.credentialsProvider(
-      buildAwsCredentialsProvider(
-        awsS3Config.awsAccessKeyId(),
-        awsS3Config.awsSecretAccessKey(),
-        awsS3Config.sessionToken()
-      )
+      buildAwsCredentialsProvider(awsS3Config.awsAccessKeyId(), awsS3Config.awsSecretAccessKey(), awsS3Config.sessionToken())
     );
     s3AsyncClient = s3Builder.build();
+
     // Initialize S3VectorsAsyncClient for vector index operations
     var builder = S3VectorsAsyncClient.builder().region(Region.of(awsS3Config.region()));
     builder.credentialsProvider(
-      buildAwsCredentialsProvider(
-        awsS3Config.awsAccessKeyId(),
-        awsS3Config.awsSecretAccessKey(),
-        awsS3Config.sessionToken()
-      )
+      buildAwsCredentialsProvider(awsS3Config.awsAccessKeyId(), awsS3Config.awsSecretAccessKey(), awsS3Config.sessionToken())
     );
     this.s3VectorsClient = builder.build();
     if (properties.readOnly()) {
@@ -106,22 +98,50 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     List<Float> vectorList = new ArrayList<>(vectorArr.length);
     for (float v : vectorArr) vectorList.add(v);
     VectorData vectorData = VectorData.fromFloat32(vectorList);
-    PutInputVector putVector = PutInputVector.builder()
-      .key(vectorEntity.id())
-      .data(vectorData)
-      .build();
-    PutVectorsRequest putRequest = PutVectorsRequest.builder()
+    PutInputVector putVector = PutInputVector.builder().key(vectorEntity.id()).data(vectorData).build();
+    PutVectorsRequest putRequest = PutVectorsRequest
+      .builder()
       .vectorBucketName(awsS3Config.vectorBucketName())
       .indexName(awsS3Config.vectorIndexName())
       .vectors(putVector)
       .build();
-    return Completable.fromFuture(s3VectorsClient.putVectors(putRequest))
+    return Completable
+      .fromFuture(s3VectorsClient.putVectors(putRequest))
       .doOnComplete(() -> log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
   }
 
   @Override
   public Flowable<VectorResult> findRelevant(VectorEntity queryEntity) {
-    throw new UnsupportedOperationException("Not yet implemented");
+    float[] vectorArr = queryEntity.vector();
+    List<Float> vectorList = new ArrayList<>(vectorArr.length);
+    for (float v : vectorArr) vectorList.add(v);
+
+    var queryRequest = QueryVectorsRequest
+      .builder()
+      .vectorBucketName(awsS3Config.vectorBucketName())
+      .indexName(awsS3Config.vectorIndexName())
+      .queryVector(VectorData.fromFloat32(vectorList))
+      .topK(properties.maxResults())
+      .returnDistance(true)
+      .returnMetadata(true)
+      .build();
+
+    return Flowable
+      .fromFuture(s3VectorsClient.queryVectors(queryRequest))
+      .flatMap(response -> Flowable.fromIterable(response.vectors()))
+      .map(result -> {
+        Map<String, Object> metadata = new java.util.HashMap<>();
+        if (result.metadata() != null) {
+          metadata.putAll(result.metadata().asMap());
+        }
+        String text = metadata.containsKey("text") ? metadata.get("text").toString() : null;
+        metadata.remove("text");
+        metadata.remove("vector");
+        float score = normalizeScore(result.distance());
+        return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
+      })
+      .sorted((a, b) -> Float.compare(b.score(), a.score()))
+      .filter(result -> result.score() >= properties.threshold());
   }
 
   @Override
@@ -130,12 +150,14 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       log.debug("AiVectorStoreAWSS3Resource.remove is read-only");
       return;
     }
-    DeleteVectorsRequest deleteRequest = DeleteVectorsRequest.builder()
+    DeleteVectorsRequest deleteRequest = DeleteVectorsRequest
+      .builder()
       .vectorBucketName(awsS3Config.vectorBucketName())
       .indexName(awsS3Config.vectorIndexName())
       .keys(vectorEntity.id())
       .build();
-    s3VectorsClient.deleteVectors(deleteRequest)
+    s3VectorsClient
+      .deleteVectors(deleteRequest)
       .whenComplete((resp, err) -> {
         if (err != null) {
           log.error("Error removing vector {} from AWS S3 Vectors", vectorEntity.id(), err);
@@ -147,15 +169,15 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   // --- Private helper methods below ---
 
-  private AwsCredentialsProvider buildAwsCredentialsProvider(String accessKeyId, String secretAccessKey, String sessionToken) {
+  private AwsCredentialsProvider buildAwsCredentialsProvider(
+    String accessKeyId,
+    String secretAccessKey,
+    String sessionToken
+  ) {
     if (sessionToken != null && !sessionToken.isEmpty()) {
-      return StaticCredentialsProvider.create(
-        AwsSessionCredentials.create(accessKeyId, secretAccessKey, sessionToken)
-      );
+      return StaticCredentialsProvider.create(AwsSessionCredentials.create(accessKeyId, secretAccessKey, sessionToken));
     } else {
-      return StaticCredentialsProvider.create(
-        AwsBasicCredentials.create(accessKeyId, secretAccessKey)
-      );
+      return StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKeyId, secretAccessKey));
     }
   }
 
@@ -171,9 +193,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Completable bucketExists(String bucketName) {
-    return Completable.fromFuture(
-      s3AsyncClient.headBucket(HeadBucketRequest.builder().bucket(bucketName).build())
-    );
+    return Completable.fromFuture(s3AsyncClient.headBucket(HeadBucketRequest.builder().bucket(bucketName).build()));
   }
 
   private Completable createBucket(String bucketName) {
@@ -181,9 +201,9 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     if (awsS3Config.region() != null) {
       builder.createBucketConfiguration(b -> b.locationConstraint(awsS3Config.region()));
     }
-    return Completable.fromFuture(
-      s3AsyncClient.createBucket(builder.build())
-    ).doOnComplete(() -> log.info("Created S3 bucket: {}", bucketName));
+    return Completable
+      .fromFuture(s3AsyncClient.createBucket(builder.build()))
+      .doOnComplete(() -> log.info("Created S3 bucket: {}", bucketName));
   }
 
   private Single<Boolean> createIndex() {
@@ -210,5 +230,12 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         log.warn("Index may already exist or could not be created: {}", e.getMessage());
         return false;
       });
+  }
+
+  private float normalizeScore(float score) {
+    return switch (this.properties.similarity()) {
+      case EUCLIDEAN -> 2 / (2 + score);
+      case COSINE, DOT -> (2 - score) / 2;
+    };
   }
 }
