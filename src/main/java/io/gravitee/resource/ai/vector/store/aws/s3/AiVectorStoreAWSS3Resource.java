@@ -25,6 +25,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -60,7 +61,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   private S3VectorsAsyncClient s3VectorsClient;
   private S3AsyncClient s3AsyncClient;
 
-  private volatile boolean activated = false;
+  private final AtomicBoolean activated = new AtomicBoolean(false);
 
   @Override
   public void doStart() throws Exception {
@@ -87,21 +88,21 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       .subscribeOn(Schedulers.io())
       .doOnComplete(() -> {
         log.debug("AWS S3 bucket and Vectors index ready.");
-        activated = true;
+        activated.set(true);
         if (properties.readOnly()) {
           logReadOnly("initialization");
         }
       })
       .doOnError(error -> {
         log.error("Error ensuring AWS S3 bucket/index", error);
-        activated = false;
+        activated.set(false);
       })
       .subscribe();
   }
 
   @Override
   public Completable add(VectorEntity vectorEntity) {
-    if (!activated) {
+    if (!activated.get()) {
       logNotActivated("add");
       return Completable.complete();
     }
@@ -128,7 +129,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public Flowable<VectorResult> findRelevant(VectorEntity queryEntity) {
-    if (!activated) {
+    if (!activated.get()) {
       logNotActivated("findRelevant");
       return Flowable.empty();
     }
@@ -170,7 +171,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public void remove(VectorEntity vectorEntity) {
-    if (!activated) {
+    if (!activated.get()) {
       logNotActivated("remove");
       return;
     }
