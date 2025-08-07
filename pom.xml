@@ -23,8 +23,8 @@
   <artifactId>gravitee-resource-ai-vector-store-aws-s3</artifactId>
   <version>1.0.0</version>
 
-  <name>Gravitee.io - Resource - AI Vector Store - Redis</name>
-  <description>This is the Redis vector store implementation</description>
+  <name>Gravitee.io - Resource - AI Vector Store - AWS S3</name>
+  <description>This is the AWS S3 vector store implementation</description>
   <packaging>jar</packaging>
 
   <parent>
@@ -60,8 +60,6 @@
     <gravitee-inference-math-native.version>1.1.2</gravitee-inference-math-native.version>
     <gravitee-node.version>7.10.0</gravitee-node.version>
     <gravitee-common.version>4.7.0</gravitee-common.version>
-    <test.containers.version>1.21.3</test.containers.version>
-    <testcontainers-redis.version>2.2.2</testcontainers-redis.version>
     <gravitee-resource-ai-vector-store-api.version>1.0.0</gravitee-resource-ai-vector-store-api.version>
     <vertx.version>4.5.1</vertx.version>
     <aws.java.sdk.version>2.32.16</aws.java.sdk.version>
@@ -119,38 +117,6 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- Vert.x -->
-    <dependency>
-      <groupId>io.vertx</groupId>
-      <artifactId>vertx-redis-client</artifactId>
-      <version>${vertx.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>io.vertx</groupId>
-          <artifactId>vertx-core</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-
-    <dependency>
-      <groupId>io.vertx</groupId>
-      <artifactId>vertx-core</artifactId>
-      <version>${vertx.version}</version>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>io.vertx</groupId>
-      <artifactId>vertx-rx-java3</artifactId>
-      <version>${vertx.version}</version>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.springframework</groupId>
-      <artifactId>spring-beans</artifactId>
-      <scope>provided</scope>
-    </dependency>
 
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -165,12 +131,6 @@
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.redis</groupId>
-      <artifactId>testcontainers-redis</artifactId>
-      <version>${testcontainers-redis.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
