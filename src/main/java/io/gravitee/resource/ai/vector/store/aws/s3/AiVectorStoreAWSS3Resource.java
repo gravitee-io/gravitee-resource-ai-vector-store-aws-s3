@@ -134,10 +134,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       logNotActivated("findRelevant");
       return Flowable.empty();
     }
-    if (properties.readOnly()) {
-      logReadOnly("findRelevant");
-      return Flowable.empty();
-    }
     float[] vectorArr = queryEntity.vector();
     List<Float> vectorList = new ArrayList<>(vectorArr.length);
     for (float v : vectorArr) vectorList.add(v);
