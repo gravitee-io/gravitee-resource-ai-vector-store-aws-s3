@@ -83,7 +83,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     );
     s3VectorsClient = builder.build();
     if (properties.readOnly()) {
-      log.debug("{} - {} is read-only", awsS3Config.vectorBucketName(), awsS3Config.vectorIndexName());
+      logReadOnly("initialization");
       activated = true;
     } else {
       ensureBucketAndIndex()
@@ -103,11 +103,11 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   @Override
   public Completable add(VectorEntity vectorEntity) {
     if (!activated) {
-      log.warn("Resource not activated. Skipping add operation.");
+      logNotActivated("add");
       return Completable.complete();
     }
     if (properties.readOnly()) {
-      log.debug("{} - {} is read-only", awsS3Config.vectorBucketName(), awsS3Config.vectorIndexName());
+      logReadOnly("add");
       return Completable.complete();
     }
 
@@ -130,11 +130,11 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   @Override
   public Flowable<VectorResult> findRelevant(VectorEntity queryEntity) {
     if (!activated) {
-      log.warn("Resource not activated. Skipping findRelevant operation.");
+      logNotActivated("findRelevant");
       return Flowable.empty();
     }
     if (properties.readOnly()) {
-      log.debug("{} - {} is read-only", awsS3Config.vectorBucketName(), awsS3Config.vectorIndexName());
+      logReadOnly("findRelevant");
       return Flowable.empty();
     }
     float[] vectorArr = queryEntity.vector();
@@ -172,11 +172,11 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   @Override
   public void remove(VectorEntity vectorEntity) {
     if (!activated) {
-      log.warn("Resource not activated. Skipping remove operation.");
+      logNotActivated("remove");
       return;
     }
     if (properties.readOnly()) {
-      log.debug("{} - {} is read-only", awsS3Config.vectorBucketName(), awsS3Config.vectorIndexName());
+      logReadOnly("remove");
       return;
     }
     DeleteVectorsRequest deleteRequest = DeleteVectorsRequest
@@ -296,5 +296,13 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       case EUCLIDEAN -> 2 / (2 + score);
       case COSINE, DOT -> (2 - score) / 2;
     };
+  }
+
+  private void logReadOnly(String operation) {
+    log.warn("Resource is read-only. Skipping {} operation for bucket {} and index {}.", operation, awsS3Config.vectorBucketName(), awsS3Config.vectorIndexName());
+  }
+
+  private void logNotActivated(String operation) {
+    log.warn("Resource not activated. Skipping {} operation for bucket {} and index {}.", operation, awsS3Config.vectorBucketName(), awsS3Config.vectorIndexName());
   }
 }
