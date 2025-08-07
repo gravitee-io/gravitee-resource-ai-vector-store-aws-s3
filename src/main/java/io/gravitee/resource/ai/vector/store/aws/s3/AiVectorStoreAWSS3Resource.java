@@ -113,9 +113,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       return Completable.complete();
     }
 
-    float[] vectorArr = vectorEntity.vector();
-    List<Float> vectorList = new ArrayList<>(vectorArr.length);
-    for (float v : vectorArr) vectorList.add(v);
+    List<Float> vectorList = toFloatList(vectorEntity.vector());
     VectorData vectorData = VectorData.fromFloat32(vectorList);
     PutInputVector putVector = PutInputVector.builder().key(vectorEntity.id()).data(vectorData).build();
     PutVectorsRequest putRequest = PutVectorsRequest
@@ -146,9 +144,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       logNotActivated("findRelevant");
       return Flowable.empty();
     }
-    float[] vectorArr = queryEntity.vector();
-    List<Float> vectorList = new ArrayList<>(vectorArr.length);
-    for (float v : vectorArr) vectorList.add(v);
+    List<Float> vectorList = toFloatList(queryEntity.vector());
 
     var queryRequest = QueryVectorsRequest
       .builder()
@@ -414,5 +410,11 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       awsS3Config.vectorBucketName(),
       awsS3Config.vectorIndexName()
     );
+  }
+
+  private List<Float> toFloatList(float[] arr) {
+    List<Float> list = new ArrayList<>(arr.length);
+    for (float v : arr) list.add(v);
+    return list;
   }
 }
