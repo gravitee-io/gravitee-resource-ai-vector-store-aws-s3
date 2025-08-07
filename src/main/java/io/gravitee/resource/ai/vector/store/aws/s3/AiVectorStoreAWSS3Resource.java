@@ -82,22 +82,21 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       buildAwsCredentialsProvider(awsS3Config.awsAccessKeyId(), awsS3Config.awsSecretAccessKey(), awsS3Config.sessionToken())
     );
     s3VectorsClient = builder.build();
-    if (properties.readOnly()) {
-      logReadOnly("initialization");
-      activated = true;
-    } else {
-      ensureBucketAndIndex()
-        .subscribeOn(Schedulers.io())
-        .doOnComplete(() -> {
-          log.debug("AWS S3 bucket and Vectors index ready.");
-          activated = true;
-        })
-        .doOnError(error -> {
-          log.error("Error ensuring AWS S3 bucket/index", error);
-          activated = false;
-        })
-        .subscribe();
-    }
+
+    ensureBucketAndIndex()
+      .subscribeOn(Schedulers.io())
+      .doOnComplete(() -> {
+        log.debug("AWS S3 bucket and Vectors index ready.");
+        activated = true;
+        if (properties.readOnly()) {
+          logReadOnly("initialization");
+        }
+      })
+      .doOnError(error -> {
+        log.error("Error ensuring AWS S3 bucket/index", error);
+        activated = false;
+      })
+      .subscribe();
   }
 
   @Override
@@ -211,14 +210,46 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Completable ensureBucketAndIndex() {
-    return bucketExists(awsS3Config.vectorBucketName())
+    if (properties.readOnly()) {
+      return bucketExists(awsS3Config.vectorBucketName())
+        .onErrorResumeNext(e -> {
+          if (e instanceof S3Exception s3e && s3e.statusCode() == 404) {
+            return Completable.error(
+              new IllegalStateException("Bucket does not exist in read-only mode: " + awsS3Config.vectorBucketName())
+            );
+          }
+          return Completable.error(e);
+        })
+        .andThen(checkIndexExists());
+    } else {
+      return bucketExists(awsS3Config.vectorBucketName())
+        .onErrorResumeNext(e -> {
+          if (e instanceof S3Exception s3e && s3e.statusCode() == 404) {
+            return createBucket(awsS3Config.vectorBucketName());
+          }
+          return Completable.error(e);
+        })
+        .andThen(createIndex().ignoreElement());
+    }
+  }
+
+  private Completable checkIndexExists() {
+    return Completable
+      .fromFuture(
+        s3VectorsClient.getIndex(builder ->
+          builder.vectorBucketName(awsS3Config.vectorBucketName()).indexName(awsS3Config.vectorIndexName())
+        )
+      )
       .onErrorResumeNext(e -> {
-        if (e instanceof S3Exception s3e && s3e.statusCode() == 404) {
-          return createBucket(awsS3Config.vectorBucketName());
+        if (
+          e instanceof software.amazon.awssdk.services.s3vectors.model.S3VectorsException s3ve && s3ve.statusCode() == 404
+        ) {
+          return Completable.error(
+            new IllegalStateException("Index does not exist in read-only mode: " + awsS3Config.vectorIndexName())
+          );
         }
         return Completable.error(e);
-      })
-      .andThen(createIndex().ignoreElement());
+      });
   }
 
   private Completable bucketExists(String bucketName) {
@@ -299,10 +330,20 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private void logReadOnly(String operation) {
-    log.warn("Resource is read-only. Skipping {} operation for bucket {} and index {}.", operation, awsS3Config.vectorBucketName(), awsS3Config.vectorIndexName());
+    log.warn(
+      "Resource is read-only. Skipping {} operation for bucket {} and index {}.",
+      operation,
+      awsS3Config.vectorBucketName(),
+      awsS3Config.vectorIndexName()
+    );
   }
 
   private void logNotActivated(String operation) {
-    log.warn("Resource not activated. Skipping {} operation for bucket {} and index {}.", operation, awsS3Config.vectorBucketName(), awsS3Config.vectorIndexName());
+    log.warn(
+      "Resource not activated. Skipping {} operation for bucket {} and index {}.",
+      operation,
+      awsS3Config.vectorBucketName(),
+      awsS3Config.vectorIndexName()
+    );
   }
 }
