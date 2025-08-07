@@ -18,6 +18,7 @@ package io.gravitee.resource.ai.vector.store.aws.s3;
 import io.gravitee.resource.ai.vector.store.api.*;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3Configuration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AiVectorStoreAWSS3Configuration;
+import io.reactivex.rxjava3.core.BackpressureStrategy;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
@@ -124,7 +125,18 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       .vectors(putVector)
       .build();
     return Completable
-      .fromFuture(s3VectorsClient.putVectors(putRequest))
+      .create(emitter -> {
+        Schedulers
+          .io()
+          .scheduleDirect(() -> {
+            try {
+              s3VectorsClient.putVectors(putRequest).get();
+              emitter.onComplete();
+            } catch (Exception e) {
+              emitter.onError(e);
+            }
+          });
+      })
       .doOnComplete(() -> log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
   }
 
@@ -149,20 +161,35 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       .build();
 
     return Flowable
-      .fromFuture(s3VectorsClient.queryVectors(queryRequest))
-      .flatMap(response -> Flowable.fromIterable(response.vectors()))
-      .map(result -> {
-        Map<String, Object> metadata = new java.util.HashMap<>();
-        if (result.metadata() != null) {
-          metadata.putAll(result.metadata().asMap());
-        }
-        String text = metadata.containsKey("text") ? metadata.get("text").toString() : null;
-        metadata.remove("text");
-        metadata.remove("vector");
-        float score = normalizeScore(result.distance());
-        return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
-      })
-      .filter(result -> result.score() >= properties.threshold())
+      .<VectorResult>create(
+        emitter -> {
+          Schedulers
+            .io()
+            .scheduleDirect(() -> {
+              try {
+                var response = s3VectorsClient.queryVectors(queryRequest).get();
+                for (var result : response.vectors()) {
+                  Map<String, Object> metadata = new java.util.HashMap<>();
+                  if (result.metadata() != null) {
+                    metadata.putAll(result.metadata().asMap());
+                  }
+                  String text = metadata.containsKey("text") ? metadata.get("text").toString() : null;
+                  metadata.remove("text");
+                  metadata.remove("vector");
+                  float score = normalizeScore(result.distance());
+                  VectorResult vectorResult = new VectorResult(new VectorEntity(result.key(), text, metadata), score);
+                  if (vectorResult.score() >= properties.threshold()) {
+                    emitter.onNext(vectorResult);
+                  }
+                }
+                emitter.onComplete();
+              } catch (Exception e) {
+                emitter.onError(e);
+              }
+            });
+        },
+        BackpressureStrategy.BUFFER
+      )
       .sorted((a, b) -> Float.compare(b.score(), a.score()));
   }
 
@@ -232,26 +259,46 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Completable checkIndexExists() {
-    return Completable
-      .fromFuture(
-        s3VectorsClient.getIndex(builder ->
-          builder.vectorBucketName(awsS3Config.vectorBucketName()).indexName(awsS3Config.vectorIndexName())
-        )
-      )
-      .onErrorResumeNext(e -> {
-        if (
-          e instanceof software.amazon.awssdk.services.s3vectors.model.S3VectorsException s3ve && s3ve.statusCode() == 404
-        ) {
-          return Completable.error(
-            new IllegalStateException("Index does not exist in read-only mode: " + awsS3Config.vectorIndexName())
-          );
-        }
-        return Completable.error(e);
-      });
+    return Completable.create(emitter -> {
+      Schedulers
+        .io()
+        .scheduleDirect(() -> {
+          try {
+            s3VectorsClient
+              .getIndex(builder ->
+                builder.vectorBucketName(awsS3Config.vectorBucketName()).indexName(awsS3Config.vectorIndexName())
+              )
+              .get();
+            emitter.onComplete();
+          } catch (Exception e) {
+            if (
+              e instanceof software.amazon.awssdk.services.s3vectors.model.S3VectorsException s3ve &&
+              s3ve.statusCode() == 404
+            ) {
+              emitter.onError(
+                new IllegalStateException("Index does not exist in read-only mode: " + awsS3Config.vectorIndexName())
+              );
+            } else {
+              emitter.onError(e);
+            }
+          }
+        });
+    });
   }
 
   private Completable bucketExists(String bucketName) {
-    return Completable.fromFuture(s3AsyncClient.headBucket(HeadBucketRequest.builder().bucket(bucketName).build()));
+    return Completable.create(emitter -> {
+      Schedulers
+        .io()
+        .scheduleDirect(() -> {
+          try {
+            s3AsyncClient.headBucket(HeadBucketRequest.builder().bucket(bucketName).build()).get();
+            emitter.onComplete();
+          } catch (Exception e) {
+            emitter.onError(e);
+          }
+        });
+    });
   }
 
   private Completable createBucket(String bucketName) {
@@ -259,12 +306,21 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     if (awsS3Config.region() != null) {
       builder.createBucketConfiguration(b -> b.locationConstraint(awsS3Config.region()));
     }
-    // Create the bucket first
     Completable create = Completable
-      .fromFuture(s3AsyncClient.createBucket(builder.build()))
+      .create(emitter -> {
+        Schedulers
+          .io()
+          .scheduleDirect(() -> {
+            try {
+              s3AsyncClient.createBucket(builder.build()).get();
+              emitter.onComplete();
+            } catch (Exception e) {
+              emitter.onError(e);
+            }
+          });
+      })
       .doOnComplete(() -> log.info("Created S3 bucket: {}", bucketName));
 
-    // If SSE-KMS is requested, set default encryption after bucket creation
     if (
       "SSE-KMS".equalsIgnoreCase(awsS3Config.encryption()) &&
       awsS3Config.kmsKeyId() != null &&
@@ -287,7 +343,18 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         .build();
       return create.andThen(
         Completable
-          .fromFuture(s3AsyncClient.putBucketEncryption(encryptionRequest))
+          .create(emitter -> {
+            Schedulers
+              .io()
+              .scheduleDirect(() -> {
+                try {
+                  s3AsyncClient.putBucketEncryption(encryptionRequest).get();
+                  emitter.onComplete();
+                } catch (Exception e) {
+                  emitter.onError(e);
+                }
+              });
+          })
           .doOnComplete(() -> log.info("Set SSE-KMS encryption for bucket: {}", bucketName))
       );
     }
@@ -308,16 +375,20 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       .distanceMetric(awsS3Config.distanceMetric().name())
       .metadataConfiguration(metadataConfig);
 
-    return Single
-      .fromFuture(s3VectorsClient.createIndex(builder.build()))
-      .map(resp -> {
-        log.debug("CreateIndexResponse: {}", resp);
-        return true;
-      })
-      .onErrorReturn(e -> {
-        log.warn("Index may already exist or could not be created: {}", e.getMessage());
-        return false;
-      });
+    return Single.create(emitter -> {
+      Schedulers
+        .io()
+        .scheduleDirect(() -> {
+          try {
+            var resp = s3VectorsClient.createIndex(builder.build()).get();
+            log.debug("CreateIndexResponse: {}", resp);
+            emitter.onSuccess(true);
+          } catch (Exception e) {
+            log.warn("Index may already exist or could not be created: {}", e.getMessage());
+            emitter.onSuccess(false);
+          }
+        });
+    });
   }
 
   private float normalizeScore(float score) {
