@@ -93,9 +93,10 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
           logReadOnly("initialization");
         }
       })
-      .doOnError(error -> {
+      .onErrorResumeNext(error -> {
         log.error("Error ensuring AWS S3 bucket/index", error);
         activated.set(false);
+        return Completable.complete();
       })
       .subscribe();
   }
