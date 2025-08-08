@@ -122,18 +122,17 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       .indexName(awsS3Config.vectorIndexName())
       .vectors(putVector)
       .build();
+
+    /* Wanted to try one with .fromCompletionStage which I *think* may be identical in this case to using
+        the Completable.create with whenComplete; specifically, I think this will essentially "bridge" the
+        same exact events we were announcing in the whenComplete block, coming directly from the underlying
+        AWS async client call.  If this is correct, it would be a bit cleaner and more concise.
+
+        In any case, leaving temporarily for discussion during review will revert if I'm incorrect on the
+        above assumption.
+     */
     return Completable
-      .create(emitter ->
-        s3VectorsClient
-          .putVectors(putRequest)
-          .whenComplete((result, error) -> {
-            if (error != null) {
-              emitter.onError(error);
-            } else {
-              emitter.onComplete();
-            }
-          })
-      )
+      .fromCompletionStage(s3VectorsClient.putVectors(putRequest))
       .doOnComplete(() -> log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
   }
 
@@ -229,7 +228,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Single<Boolean> indexExists() {
-    return Single.<Boolean>create(emitter ->
+    return Single.create(emitter ->
       s3VectorsClient
         .getIndex(builder ->
           builder.vectorBucketName(awsS3Config.vectorBucketName()).indexName(awsS3Config.vectorIndexName())
@@ -252,7 +251,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Single<Boolean> bucketExists(String bucketName) {
-    return Single.<Boolean>create(emitter ->
+    return Single.create(emitter ->
       s3AsyncClient
         .headBucket(HeadBucketRequest.builder().bucket(bucketName).build())
         .whenComplete((result, error) -> {
@@ -272,8 +271,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     );
   }
 
-  /* TODO: Look at this one, not sure about the using flatMapCompletable here
-   */
   private Completable ensureBucketAndIndex() {
     return bucketExists(awsS3Config.vectorBucketName())
       .flatMapCompletable(exists -> exists ? Completable.complete() : createBucket())
