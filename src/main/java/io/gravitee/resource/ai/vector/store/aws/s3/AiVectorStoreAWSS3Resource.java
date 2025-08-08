@@ -183,6 +183,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
             }),
         BackpressureStrategy.BUFFER
       )
+      .observeOn(Schedulers.computation())
       .sorted((a, b) -> Float.compare(b.score(), a.score()));
   }
 
