@@ -130,9 +130,14 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
         In any case, leaving temporarily for discussion during review will revert if I'm incorrect on the
         above assumption.
+
+        Also including cancellation, so if our side is disposed, we'll signal the AWS client to cancel the request.
      */
     return Completable
-      .fromCompletionStage(s3VectorsClient.putVectors(putRequest))
+      .defer(() -> {
+        var fut = s3VectorsClient.putVectors(putRequest); // CompletableFuture<?>
+        return Completable.fromCompletionStage(fut).doOnDispose(() -> fut.cancel(true));
+      })
       .doOnComplete(() -> log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
   }
 
