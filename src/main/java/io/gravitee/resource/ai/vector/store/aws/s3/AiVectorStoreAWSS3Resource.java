@@ -87,6 +87,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     s3VectorsClient = builder.build();
 
     ensureBucketAndIndex()
+      .subscribeOn(Schedulers.io())
       .doOnComplete(() -> {
         log.debug("AWS S3 bucket and Vectors index ready.");
         activated.set(true);
@@ -227,51 +228,47 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Single<Boolean> indexExists() {
-    return Single
-      .<Boolean>create(emitter ->
-        s3VectorsClient
-          .getIndex(builder ->
-            builder.vectorBucketName(awsS3Config.vectorBucketName()).indexName(awsS3Config.vectorIndexName())
-          )
-          .whenComplete((result, error) -> {
-            if (error != null) {
-              if (error instanceof S3VectorsException s3ve && s3ve.statusCode() == 404) {
-                log.warn("Index does not exist: {}", awsS3Config.vectorIndexName());
-                emitter.onSuccess(false);
-              } else {
-                log.error("Error checking index existence: {}", error.getMessage());
-                emitter.onError(error);
-              }
+    return Single.<Boolean>create(emitter ->
+      s3VectorsClient
+        .getIndex(builder ->
+          builder.vectorBucketName(awsS3Config.vectorBucketName()).indexName(awsS3Config.vectorIndexName())
+        )
+        .whenComplete((result, error) -> {
+          if (error != null) {
+            if (error instanceof S3VectorsException s3ve && s3ve.statusCode() == 404) {
+              log.warn("Index does not exist: {}", awsS3Config.vectorIndexName());
+              emitter.onSuccess(false);
             } else {
-              log.debug("Index exists: {}", awsS3Config.vectorIndexName());
-              emitter.onSuccess(true);
+              log.error("Error checking index existence: {}", error.getMessage());
+              emitter.onError(error);
             }
-          })
-      )
-      .subscribeOn(Schedulers.io());
+          } else {
+            log.debug("Index exists: {}", awsS3Config.vectorIndexName());
+            emitter.onSuccess(true);
+          }
+        })
+    );
   }
 
   private Single<Boolean> bucketExists(String bucketName) {
-    return Single
-      .<Boolean>create(emitter ->
-        s3AsyncClient
-          .headBucket(HeadBucketRequest.builder().bucket(bucketName).build())
-          .whenComplete((result, error) -> {
-            if (error != null) {
-              if (error instanceof S3Exception s3e && s3e.statusCode() == 404) {
-                log.warn("Bucket does not exist: {}", bucketName);
-                emitter.onSuccess(false);
-              } else {
-                log.error("Error checking bucket existence: {}", error.getMessage());
-                emitter.onError(error);
-              }
+    return Single.<Boolean>create(emitter ->
+      s3AsyncClient
+        .headBucket(HeadBucketRequest.builder().bucket(bucketName).build())
+        .whenComplete((result, error) -> {
+          if (error != null) {
+            if (error instanceof S3Exception s3e && s3e.statusCode() == 404) {
+              log.warn("Bucket does not exist: {}", bucketName);
+              emitter.onSuccess(false);
             } else {
-              log.debug("Bucket exists: {}", bucketName);
-              emitter.onSuccess(true);
+              log.error("Error checking bucket existence: {}", error.getMessage());
+              emitter.onError(error);
             }
-          })
-      )
-      .subscribeOn(Schedulers.io());
+          } else {
+            log.debug("Bucket exists: {}", bucketName);
+            emitter.onSuccess(true);
+          }
+        })
+    );
   }
 
   /* TODO: Look at this one, not sure about the using flatMapCompletable here
@@ -287,62 +284,60 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     if (awsS3Config.region() != null) {
       builder.createBucketConfiguration(b -> b.locationConstraint(awsS3Config.region()));
     }
-    return Completable
-      .create(emitter ->
-        s3AsyncClient
-          .createBucket(builder.build())
-          .whenComplete((result, error) -> {
-            if (error != null) {
-              log.error("Failed to create bucket {}: {}", awsS3Config.vectorBucketName(), error.getMessage());
-              emitter.onError(error);
+    return Completable.create(emitter ->
+      s3AsyncClient
+        .createBucket(builder.build())
+        .whenComplete((result, error) -> {
+          if (error != null) {
+            log.error("Failed to create bucket {}: {}", awsS3Config.vectorBucketName(), error.getMessage());
+            emitter.onError(error);
+          } else {
+            log.info("Created S3 bucket: {}", awsS3Config.vectorBucketName());
+            // Check and apply SSE-KMS encryption if needed
+            if (
+              "SSE-KMS".equalsIgnoreCase(awsS3Config.encryption()) &&
+              awsS3Config.kmsKeyId() != null &&
+              !awsS3Config.kmsKeyId().isBlank()
+            ) {
+              ServerSideEncryptionByDefault sseByDefault = ServerSideEncryptionByDefault
+                .builder()
+                .sseAlgorithm("aws:kms")
+                .kmsMasterKeyID(awsS3Config.kmsKeyId())
+                .build();
+              ServerSideEncryptionRule sseRule = ServerSideEncryptionRule
+                .builder()
+                .applyServerSideEncryptionByDefault(sseByDefault)
+                .build();
+              ServerSideEncryptionConfiguration sseConfig = ServerSideEncryptionConfiguration
+                .builder()
+                .rules(sseRule)
+                .build();
+              PutBucketEncryptionRequest encryptionRequest = PutBucketEncryptionRequest
+                .builder()
+                .bucket(awsS3Config.vectorBucketName())
+                .serverSideEncryptionConfiguration(sseConfig)
+                .build();
+              s3AsyncClient
+                .putBucketEncryption(encryptionRequest)
+                .whenComplete((encResult, encError) -> {
+                  if (encError != null) {
+                    log.error(
+                      "Failed to set SSE-KMS encryption for bucket {}: {}",
+                      awsS3Config.vectorBucketName(),
+                      encError.getMessage()
+                    );
+                    emitter.onError(encError);
+                  } else {
+                    log.info("Set SSE-KMS encryption for bucket: {}", awsS3Config.vectorBucketName());
+                    emitter.onComplete();
+                  }
+                });
             } else {
-              log.info("Created S3 bucket: {}", awsS3Config.vectorBucketName());
-              // Check and apply SSE-KMS encryption if needed
-              if (
-                "SSE-KMS".equalsIgnoreCase(awsS3Config.encryption()) &&
-                awsS3Config.kmsKeyId() != null &&
-                !awsS3Config.kmsKeyId().isBlank()
-              ) {
-                ServerSideEncryptionByDefault sseByDefault = ServerSideEncryptionByDefault
-                  .builder()
-                  .sseAlgorithm("aws:kms")
-                  .kmsMasterKeyID(awsS3Config.kmsKeyId())
-                  .build();
-                ServerSideEncryptionRule sseRule = ServerSideEncryptionRule
-                  .builder()
-                  .applyServerSideEncryptionByDefault(sseByDefault)
-                  .build();
-                ServerSideEncryptionConfiguration sseConfig = ServerSideEncryptionConfiguration
-                  .builder()
-                  .rules(sseRule)
-                  .build();
-                PutBucketEncryptionRequest encryptionRequest = PutBucketEncryptionRequest
-                  .builder()
-                  .bucket(awsS3Config.vectorBucketName())
-                  .serverSideEncryptionConfiguration(sseConfig)
-                  .build();
-                s3AsyncClient
-                  .putBucketEncryption(encryptionRequest)
-                  .whenComplete((encResult, encError) -> {
-                    if (encError != null) {
-                      log.error(
-                        "Failed to set SSE-KMS encryption for bucket {}: {}",
-                        awsS3Config.vectorBucketName(),
-                        encError.getMessage()
-                      );
-                      emitter.onError(encError);
-                    } else {
-                      log.info("Set SSE-KMS encryption for bucket: {}", awsS3Config.vectorBucketName());
-                      emitter.onComplete();
-                    }
-                  });
-              } else {
-                emitter.onComplete();
-              }
+              emitter.onComplete();
             }
-          })
-      )
-      .subscribeOn(Schedulers.io());
+          }
+        })
+    );
   }
 
   private Completable createIndex() {
@@ -359,21 +354,19 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       .distanceMetric(awsS3Config.distanceMetric().name())
       .metadataConfiguration(metadataConfig);
 
-    return Completable
-      .create(emitter ->
-        s3VectorsClient
-          .createIndex(builder.build())
-          .whenComplete((resp, err) -> {
-            if (err != null) {
-              log.warn("Index may already exist or could not be created: {}", err.getMessage());
-              emitter.onError(err);
-            } else {
-              log.debug("CreateIndexResponse: {}", resp);
-              emitter.onComplete();
-            }
-          })
-      )
-      .subscribeOn(Schedulers.io());
+    return Completable.create(emitter ->
+      s3VectorsClient
+        .createIndex(builder.build())
+        .whenComplete((resp, err) -> {
+          if (err != null) {
+            log.warn("Index may already exist or could not be created: {}", err.getMessage());
+            emitter.onError(err);
+          } else {
+            log.debug("CreateIndexResponse: {}", resp);
+            emitter.onComplete();
+          }
+        })
+    );
   }
 
   private float normalizeScore(float score) {
