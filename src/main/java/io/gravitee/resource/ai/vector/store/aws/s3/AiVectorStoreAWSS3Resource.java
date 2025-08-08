@@ -18,7 +18,6 @@ package io.gravitee.resource.ai.vector.store.aws.s3;
 import io.gravitee.resource.ai.vector.store.api.*;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3Configuration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AiVectorStoreAWSS3Configuration;
-import io.reactivex.rxjava3.core.BackpressureStrategy;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
@@ -42,14 +41,7 @@ import software.amazon.awssdk.services.s3.model.ServerSideEncryptionByDefault;
 import software.amazon.awssdk.services.s3.model.ServerSideEncryptionConfiguration;
 import software.amazon.awssdk.services.s3.model.ServerSideEncryptionRule;
 import software.amazon.awssdk.services.s3vectors.S3VectorsAsyncClient;
-import software.amazon.awssdk.services.s3vectors.model.CreateIndexRequest;
-import software.amazon.awssdk.services.s3vectors.model.DeleteVectorsRequest;
-import software.amazon.awssdk.services.s3vectors.model.MetadataConfiguration;
-import software.amazon.awssdk.services.s3vectors.model.PutInputVector;
-import software.amazon.awssdk.services.s3vectors.model.PutVectorsRequest;
-import software.amazon.awssdk.services.s3vectors.model.QueryVectorsRequest;
-import software.amazon.awssdk.services.s3vectors.model.S3VectorsException;
-import software.amazon.awssdk.services.s3vectors.model.VectorData;
+import software.amazon.awssdk.services.s3vectors.model.*;
 
 /**
  * @author Derek Thompson (derek.thompson at graviteesource.com)
@@ -113,29 +105,18 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       return Completable.complete();
     }
 
-    List<Float> vectorList = toFloatList(vectorEntity.vector());
-    VectorData vectorData = VectorData.fromFloat32(vectorList);
-    PutInputVector putVector = PutInputVector.builder().key(vectorEntity.id()).data(vectorData).build();
-    PutVectorsRequest putRequest = PutVectorsRequest
-      .builder()
-      .vectorBucketName(awsS3Config.vectorBucketName())
-      .indexName(awsS3Config.vectorIndexName())
-      .vectors(putVector)
-      .build();
-
-    /* Wanted to try one with .fromCompletionStage which I *think* may be identical in this case to using
-        the Completable.create with whenComplete; specifically, I think this will essentially "bridge" the
-        same exact events we were announcing in the whenComplete block, coming directly from the underlying
-        AWS async client call.  If this is correct, it would be a bit cleaner and more concise.
-
-        In any case, leaving temporarily for discussion during review will revert if I'm incorrect on the
-        above assumption.
-
-        Also including cancellation, so if our side is disposed, we'll signal the AWS client to cancel the request.
-     */
     return Completable
       .defer(() -> {
-        var fut = s3VectorsClient.putVectors(putRequest); // CompletableFuture<?>
+        List<Float> vectorList = toFloatList(vectorEntity.vector());
+        VectorData vectorData = VectorData.fromFloat32(vectorList);
+        PutInputVector putVector = PutInputVector.builder().key(vectorEntity.id()).data(vectorData).build();
+        PutVectorsRequest putRequest = PutVectorsRequest
+          .builder()
+          .vectorBucketName(awsS3Config.vectorBucketName())
+          .indexName(awsS3Config.vectorIndexName())
+          .vectors(putVector)
+          .build();
+        var fut = s3VectorsClient.putVectors(putRequest);
         return Completable.fromCompletionStage(fut).doOnDispose(() -> fut.cancel(true));
       })
       .doOnComplete(() -> log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
@@ -147,47 +128,34 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       logNotActivated("findRelevant");
       return Flowable.empty();
     }
-    List<Float> vectorList = toFloatList(queryEntity.vector());
-
-    var queryRequest = QueryVectorsRequest
-      .builder()
-      .vectorBucketName(awsS3Config.vectorBucketName())
-      .indexName(awsS3Config.vectorIndexName())
-      .queryVector(VectorData.fromFloat32(vectorList))
-      .topK(properties.maxResults())
-      .returnDistance(true)
-      .returnMetadata(true)
-      .build();
-
     return Flowable
-      .<VectorResult>create(
-        emitter ->
-          s3VectorsClient
-            .queryVectors(queryRequest)
-            .whenComplete((response, error) -> {
-              if (error != null) {
-                emitter.onError(error);
-              } else {
-                for (var result : response.vectors()) {
-                  Map<String, Object> metadata = new java.util.HashMap<>();
-                  if (result.metadata() != null) {
-                    metadata.putAll(result.metadata().asMap());
-                  }
-                  String text = metadata.containsKey("text") ? metadata.get("text").toString() : null;
-                  metadata.remove("text");
-                  metadata.remove("vector");
-                  float score = normalizeScore(result.distance());
-                  VectorResult vectorResult = new VectorResult(new VectorEntity(result.key(), text, metadata), score);
-                  if (vectorResult.score() >= properties.threshold()) {
-                    emitter.onNext(vectorResult);
-                  }
-                }
-                emitter.onComplete();
-              }
-            }),
-        BackpressureStrategy.BUFFER
-      )
-      .observeOn(Schedulers.computation())
+      .defer(() -> {
+        List<Float> vectorList = toFloatList(queryEntity.vector());
+        QueryVectorsRequest req = QueryVectorsRequest
+          .builder()
+          .vectorBucketName(awsS3Config.vectorBucketName())
+          .indexName(awsS3Config.vectorIndexName())
+          .queryVector(VectorData.fromFloat32(vectorList))
+          .topK(properties.maxResults())
+          .returnDistance(true)
+          .returnMetadata(true)
+          .build();
+
+        var fut = s3VectorsClient.queryVectors(req);
+        return Single
+          .fromCompletionStage(fut)
+          .doOnDispose(() -> fut.cancel(true))
+          .flattenAsFlowable(QueryVectorsResponse::vectors)
+          .map(result -> {
+            Map<String, Object> metadata = new java.util.HashMap<>();
+            if (result.metadata() != null) metadata.putAll(result.metadata().asMap());
+            String text = (String) metadata.remove("text");
+            metadata.remove("vector");
+            float score = normalizeScore(result.distance());
+            return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
+          })
+          .filter(vr -> vr.score() >= properties.threshold());
+      })
       .sorted((a, b) -> Float.compare(b.score(), a.score()));
   }
 
@@ -207,15 +175,16 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       .indexName(awsS3Config.vectorIndexName())
       .keys(vectorEntity.id())
       .build();
-    s3VectorsClient
-      .deleteVectors(deleteRequest)
-      .whenComplete((resp, err) -> {
-        if (err != null) {
-          log.error("Error removing vector {} from AWS S3 Vectors", vectorEntity.id(), err);
-        } else {
-          log.debug("Vector {} removed from AWS S3 Vectors.", vectorEntity.id());
-        }
-      });
+
+    var fut = s3VectorsClient.deleteVectors(deleteRequest);
+    fut.whenComplete((resp, err) -> {
+      if (err != null) {
+        log.error("Error removing vector {} from AWS S3 Vectors", vectorEntity.id(), err);
+      } else {
+        log.debug("Vector {} removed from AWS S3 Vectors.", vectorEntity.id());
+      }
+    });
+    // (Can't return a Completable here due to base type, but at least we retain cancellation if the future is kept)
   }
 
   // --- Private helper methods below ---
@@ -233,47 +202,46 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Single<Boolean> indexExists() {
-    return Single.create(emitter ->
-      s3VectorsClient
-        .getIndex(builder ->
-          builder.vectorBucketName(awsS3Config.vectorBucketName()).indexName(awsS3Config.vectorIndexName())
-        )
-        .whenComplete((result, error) -> {
-          if (error != null) {
-            if (error instanceof S3VectorsException s3ve && s3ve.statusCode() == 404) {
-              log.warn("Index does not exist: {}", awsS3Config.vectorIndexName());
-              emitter.onSuccess(false);
-            } else {
-              log.error("Error checking index existence: {}", error.getMessage());
-              emitter.onError(error);
-            }
-          } else {
-            log.debug("Index exists: {}", awsS3Config.vectorIndexName());
-            emitter.onSuccess(true);
+    return Single.defer(() -> {
+      var fut = s3VectorsClient.getIndex(b ->
+        b.vectorBucketName(awsS3Config.vectorBucketName()).indexName(awsS3Config.vectorIndexName())
+      );
+
+      return Single
+        .fromCompletionStage(fut)
+        .map(resp -> true)
+        .onErrorResumeNext(err -> {
+          Throwable e = unwrapCompletion(err);
+          if (e instanceof S3VectorsException s3ve && s3ve.statusCode() == 404) {
+            log.warn("Index does not exist: {}", awsS3Config.vectorIndexName());
+            return Single.just(false);
           }
+          log.error("Error checking index existence: {}", e.getMessage());
+          return Single.error(e);
         })
-    );
+        .doOnDispose(() -> fut.cancel(true));
+    });
   }
 
   private Single<Boolean> bucketExists(String bucketName) {
-    return Single.create(emitter ->
-      s3AsyncClient
-        .headBucket(HeadBucketRequest.builder().bucket(bucketName).build())
-        .whenComplete((result, error) -> {
-          if (error != null) {
-            if (error instanceof S3Exception s3e && s3e.statusCode() == 404) {
-              log.warn("Bucket does not exist: {}", bucketName);
-              emitter.onSuccess(false);
-            } else {
-              log.error("Error checking bucket existence: {}", error.getMessage());
-              emitter.onError(error);
-            }
-          } else {
-            log.debug("Bucket exists: {}", bucketName);
-            emitter.onSuccess(true);
+    return Single.defer(() -> {
+      var req = HeadBucketRequest.builder().bucket(bucketName).build();
+      var fut = s3AsyncClient.headBucket(req);
+
+      return Single
+        .fromCompletionStage(fut)
+        .map(resp -> true)
+        .onErrorResumeNext(err -> {
+          Throwable e = unwrapCompletion(err);
+          if (e instanceof S3Exception s3e && s3e.statusCode() == 404) {
+            log.warn("Bucket does not exist: {}", bucketName);
+            return Single.just(false);
           }
+          log.error("Error checking bucket existence: {}", e.getMessage());
+          return Single.error(e);
         })
-    );
+        .doOnDispose(() -> fut.cancel(true));
+    });
   }
 
   private Completable ensureBucketAndIndex() {
@@ -283,93 +251,89 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Completable createBucket() {
-    CreateBucketRequest.Builder builder = CreateBucketRequest.builder().bucket(awsS3Config.vectorBucketName());
-    if (awsS3Config.region() != null) {
-      builder.createBucketConfiguration(b -> b.locationConstraint(awsS3Config.region()));
-    }
-    return Completable.create(emitter ->
-      s3AsyncClient
-        .createBucket(builder.build())
-        .whenComplete((result, error) -> {
-          if (error != null) {
-            log.error("Failed to create bucket {}: {}", awsS3Config.vectorBucketName(), error.getMessage());
-            emitter.onError(error);
-          } else {
-            log.info("Created S3 bucket: {}", awsS3Config.vectorBucketName());
-            // Check and apply SSE-KMS encryption if needed
-            if (
-              "SSE-KMS".equalsIgnoreCase(awsS3Config.encryption()) &&
-              awsS3Config.kmsKeyId() != null &&
-              !awsS3Config.kmsKeyId().isBlank()
-            ) {
-              ServerSideEncryptionByDefault sseByDefault = ServerSideEncryptionByDefault
-                .builder()
-                .sseAlgorithm("aws:kms")
-                .kmsMasterKeyID(awsS3Config.kmsKeyId())
-                .build();
-              ServerSideEncryptionRule sseRule = ServerSideEncryptionRule
-                .builder()
-                .applyServerSideEncryptionByDefault(sseByDefault)
-                .build();
-              ServerSideEncryptionConfiguration sseConfig = ServerSideEncryptionConfiguration
-                .builder()
-                .rules(sseRule)
-                .build();
-              PutBucketEncryptionRequest encryptionRequest = PutBucketEncryptionRequest
-                .builder()
-                .bucket(awsS3Config.vectorBucketName())
-                .serverSideEncryptionConfiguration(sseConfig)
-                .build();
-              s3AsyncClient
-                .putBucketEncryption(encryptionRequest)
-                .whenComplete((encResult, encError) -> {
-                  if (encError != null) {
-                    log.error(
-                      "Failed to set SSE-KMS encryption for bucket {}: {}",
-                      awsS3Config.vectorBucketName(),
-                      encError.getMessage()
-                    );
-                    emitter.onError(encError);
-                  } else {
-                    log.info("Set SSE-KMS encryption for bucket: {}", awsS3Config.vectorBucketName());
-                    emitter.onComplete();
-                  }
-                });
-            } else {
-              emitter.onComplete();
-            }
-          }
-        })
-    );
+    return Completable.defer(() -> {
+      CreateBucketRequest.Builder builder = CreateBucketRequest.builder().bucket(awsS3Config.vectorBucketName());
+      if (awsS3Config.region() != null) {
+        builder.createBucketConfiguration(b -> b.locationConstraint(awsS3Config.region()));
+      }
+      var createFut = s3AsyncClient.createBucket(builder.build());
+
+      // Stage 1: create a bucket
+      Completable createStage = Completable
+        .fromCompletionStage(createFut)
+        .doOnDispose(() -> createFut.cancel(true))
+        .doOnComplete(() -> log.info("Created S3 bucket: {}", awsS3Config.vectorBucketName()))
+        .doOnError(err -> log.error("Failed to create bucket {}: {}", awsS3Config.vectorBucketName(), err.getMessage(), err)
+        );
+
+      // Stage 2: optional SSE-KMS
+      Completable encryptionStage = Completable.defer(() -> {
+        if (
+          "SSE-KMS".equalsIgnoreCase(awsS3Config.encryption()) &&
+          awsS3Config.kmsKeyId() != null &&
+          !awsS3Config.kmsKeyId().isBlank()
+        ) {
+          ServerSideEncryptionByDefault sseByDefault = ServerSideEncryptionByDefault
+            .builder()
+            .sseAlgorithm("aws:kms")
+            .kmsMasterKeyID(awsS3Config.kmsKeyId())
+            .build();
+          ServerSideEncryptionRule sseRule = ServerSideEncryptionRule
+            .builder()
+            .applyServerSideEncryptionByDefault(sseByDefault)
+            .build();
+          ServerSideEncryptionConfiguration sseConfig = ServerSideEncryptionConfiguration.builder().rules(sseRule).build();
+          PutBucketEncryptionRequest encryptionRequest = PutBucketEncryptionRequest
+            .builder()
+            .bucket(awsS3Config.vectorBucketName())
+            .serverSideEncryptionConfiguration(sseConfig)
+            .build();
+
+          var encFut = s3AsyncClient.putBucketEncryption(encryptionRequest);
+          return Completable
+            .fromCompletionStage(encFut)
+            .doOnDispose(() -> encFut.cancel(true))
+            .doOnComplete(() -> log.info("Set SSE-KMS encryption for bucket: {}", awsS3Config.vectorBucketName()))
+            .doOnError(encErr ->
+              log.error(
+                "Failed to set SSE-KMS encryption for bucket {}: {}",
+                awsS3Config.vectorBucketName(),
+                encErr.getMessage(),
+                encErr
+              )
+            );
+        } else {
+          return Completable.complete();
+        }
+      });
+
+      return createStage.andThen(encryptionStage);
+    });
   }
 
   private Completable createIndex() {
-    MetadataConfiguration metadataConfig = MetadataConfiguration
-      .builder()
-      .nonFilterableMetadataKeys(awsS3Config.metadataSchema().nonFilterable())
-      .build();
+    return Completable.defer(() -> {
+      MetadataConfiguration metadataConfig = MetadataConfiguration
+        .builder()
+        .nonFilterableMetadataKeys(awsS3Config.metadataSchema().nonFilterable())
+        .build();
 
-    CreateIndexRequest.Builder builder = CreateIndexRequest
-      .builder()
-      .vectorBucketName(awsS3Config.vectorBucketName())
-      .indexName(awsS3Config.vectorIndexName())
-      .dimension(properties.embeddingSize())
-      .distanceMetric(awsS3Config.distanceMetric().name())
-      .metadataConfiguration(metadataConfig);
+      CreateIndexRequest req = CreateIndexRequest
+        .builder()
+        .vectorBucketName(awsS3Config.vectorBucketName())
+        .indexName(awsS3Config.vectorIndexName())
+        .dimension(properties.embeddingSize())
+        .distanceMetric(awsS3Config.distanceMetric().name())
+        .metadataConfiguration(metadataConfig)
+        .build();
 
-    return Completable.create(emitter ->
-      s3VectorsClient
-        .createIndex(builder.build())
-        .whenComplete((resp, err) -> {
-          if (err != null) {
-            log.warn("Index may already exist or could not be created: {}", err.getMessage());
-            emitter.onError(err);
-          } else {
-            log.debug("CreateIndexResponse: {}", resp);
-            emitter.onComplete();
-          }
-        })
-    );
+      var fut = s3VectorsClient.createIndex(req);
+      return Completable
+        .fromCompletionStage(fut)
+        .doOnDispose(() -> fut.cancel(true))
+        .doOnComplete(() -> log.debug("Index created: {}", awsS3Config.vectorIndexName()))
+        .doOnError(err -> log.warn("Index may already exist or could not be created: {}", err.getMessage(), err));
+    });
   }
 
   private float normalizeScore(float score) {
@@ -401,5 +365,11 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     List<Float> list = new ArrayList<>(arr.length);
     for (float v : arr) list.add(v);
     return list;
+  }
+
+  private static Throwable unwrapCompletion(Throwable t) {
+    if (t instanceof java.util.concurrent.CompletionException ce && ce.getCause() != null) return ce.getCause();
+    if (t instanceof java.util.concurrent.ExecutionException ee && ee.getCause() != null) return ee.getCause();
+    return t;
   }
 }
