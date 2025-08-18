@@ -81,13 +81,6 @@
           "description": "ARN of the KMS key if using SSE_KMS.",
           "default": null
         },
-        "distanceMetric": {
-          "type": "string",
-          "title": "Distance Metric",
-          "description": "Distance metric for the index. Must match the similarity function.",
-          "enum": ["COSINE", "EUCLIDEAN"],
-          "default": "COSINE"
-        },
         "region": {
           "type": "string",
           "title": "AWS Region",
@@ -135,7 +128,6 @@
         "vectorBucketName",
         "vectorIndexName",
         "encryption",
-        "distanceMetric",
         "region",
         "metadataSchema",
         "awsAccessKeyId",
