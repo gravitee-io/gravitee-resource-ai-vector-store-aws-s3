@@ -15,20 +15,8 @@
  */
 package io.gravitee.resource.ai.vector.store.aws.s3.configuration;
 
-/**
- * @author Derek Thompson (derek.thompson at graviteesource.com)
- * @author GraviteeSource Team
- */
-public record AWSS3Configuration(
-  String vectorBucketName,
-  String vectorIndexName,
-  EncryptionType encryption,
-  String kmsKeyId,
-  DistanceMetric distanceMetric,
-  String region,
-  MetadataSchema metadataSchema,
-  String awsAccessKeyId,
-  String awsSecretAccessKey,
-  String sessionToken,
-  AWSS3VectorStoreConfiguration awsS3VectorStoreConfiguration
-) {}
+public enum EncryptionType {
+  SSE_S3,
+  SSE_KMS,
+  NONE,
+}

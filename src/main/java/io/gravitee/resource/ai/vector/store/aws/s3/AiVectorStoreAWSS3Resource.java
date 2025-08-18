@@ -18,6 +18,7 @@ package io.gravitee.resource.ai.vector.store.aws.s3;
 import io.gravitee.resource.ai.vector.store.api.*;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3Configuration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AiVectorStoreAWSS3Configuration;
+import io.gravitee.resource.ai.vector.store.aws.s3.configuration.EncryptionType;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
@@ -34,14 +35,6 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.document.Document;
 import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3AsyncClient;
-import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
-import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
-import software.amazon.awssdk.services.s3.model.PutBucketEncryptionRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.model.ServerSideEncryptionByDefault;
-import software.amazon.awssdk.services.s3.model.ServerSideEncryptionConfiguration;
-import software.amazon.awssdk.services.s3.model.ServerSideEncryptionRule;
 import software.amazon.awssdk.services.s3vectors.S3VectorsAsyncClient;
 import software.amazon.awssdk.services.s3vectors.model.*;
 
@@ -55,7 +48,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   private AWSS3Configuration awsS3Config;
   private AiVectorStoreProperties properties;
   private S3VectorsAsyncClient s3VectorsClient;
-  private S3AsyncClient s3AsyncClient;
 
   private final AtomicBoolean activated = new AtomicBoolean(false);
 
@@ -66,14 +58,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     properties = super.configuration().properties();
     awsS3Config = super.configuration().awsS3Configuration();
 
-    // Initialize S3AsyncClient for bucket operations
-    var s3Builder = S3AsyncClient.builder().region(Region.of(awsS3Config.region()));
-    s3Builder.credentialsProvider(
-      buildAwsCredentialsProvider(awsS3Config.awsAccessKeyId(), awsS3Config.awsSecretAccessKey(), awsS3Config.sessionToken())
-    );
-    s3AsyncClient = s3Builder.build();
-
-    // Initialize S3VectorsAsyncClient for vector index operations
     var builder = S3VectorsAsyncClient.builder().region(Region.of(awsS3Config.region()));
     builder.credentialsProvider(
       buildAwsCredentialsProvider(awsS3Config.awsAccessKeyId(), awsS3Config.awsSecretAccessKey(), awsS3Config.sessionToken())
@@ -196,7 +180,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         log.debug("Vector {} removed from AWS S3 Vectors.", vectorEntity.id());
       }
     });
-    // (Can't return a Completable here due to base type, but at least we retain cancellation if the future is kept)
   }
 
   // --- Private helper methods below ---
@@ -237,15 +220,13 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   private Single<Boolean> bucketExists(String bucketName) {
     return Single.defer(() -> {
-      var req = HeadBucketRequest.builder().bucket(bucketName).build();
-      var fut = s3AsyncClient.headBucket(req);
-
+      var fut = s3VectorsClient.getVectorBucket(b -> b.vectorBucketName(bucketName));
       return Single
         .fromCompletionStage(fut)
         .map(resp -> true)
         .onErrorResumeNext(err -> {
           Throwable e = unwrapCompletion(err);
-          if (e instanceof S3Exception s3e && s3e.statusCode() == 404) {
+          if (e instanceof S3VectorsException s3ve && s3ve.statusCode() == 404) {
             log.warn("Bucket does not exist: {}", bucketName);
             return Single.just(false);
           }
@@ -264,62 +245,36 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   private Completable createBucket() {
     return Completable.defer(() -> {
-      CreateBucketRequest.Builder builder = CreateBucketRequest.builder().bucket(awsS3Config.vectorBucketName());
-      if (awsS3Config.region() != null) {
-        builder.createBucketConfiguration(b -> b.locationConstraint(awsS3Config.region()));
-      }
-      var createFut = s3AsyncClient.createBucket(builder.build());
+      CreateVectorBucketRequest.Builder builder = CreateVectorBucketRequest
+        .builder()
+        .vectorBucketName(awsS3Config.vectorBucketName());
 
-      // Stage 1: create a bucket
-      Completable createStage = Completable
+      if (awsS3Config.encryption() != null && awsS3Config.encryption() != EncryptionType.NONE) {
+        EncryptionConfiguration.Builder encBuilder = EncryptionConfiguration.builder();
+        switch (awsS3Config.encryption()) {
+          case SSE_KMS -> {
+            encBuilder.sseType(SseType.AWS_KMS);
+            if (awsS3Config.kmsKeyId() != null && !awsS3Config.kmsKeyId().isEmpty()) {
+              encBuilder.kmsKeyArn(awsS3Config.kmsKeyId());
+            } else {
+              return Completable.error(
+                new IllegalArgumentException("SSE_KMS encryption selected but no KMS Key ARN provided.")
+              );
+            }
+          }
+          case SSE_S3 -> encBuilder.sseType(SseType.AES256);
+          default -> encBuilder.sseType(SseType.UNKNOWN_TO_SDK_VERSION);
+        }
+        builder.encryptionConfiguration(encBuilder.build());
+      }
+
+      var createFut = s3VectorsClient.createVectorBucket(builder.build());
+      return Completable
         .fromCompletionStage(createFut)
         .doOnDispose(() -> createFut.cancel(true))
-        .doOnComplete(() -> log.info("Created S3 bucket: {}", awsS3Config.vectorBucketName()))
+        .doOnComplete(() -> log.info("Created S3 Vectors bucket: {}", awsS3Config.vectorBucketName()))
         .doOnError(err -> log.error("Failed to create bucket {}: {}", awsS3Config.vectorBucketName(), err.getMessage(), err)
         );
-
-      // Stage 2: optional SSE-KMS
-      Completable encryptionStage = Completable.defer(() -> {
-        if (
-          "SSE-KMS".equalsIgnoreCase(awsS3Config.encryption()) &&
-          awsS3Config.kmsKeyId() != null &&
-          !awsS3Config.kmsKeyId().isBlank()
-        ) {
-          ServerSideEncryptionByDefault sseByDefault = ServerSideEncryptionByDefault
-            .builder()
-            .sseAlgorithm("aws:kms")
-            .kmsMasterKeyID(awsS3Config.kmsKeyId())
-            .build();
-          ServerSideEncryptionRule sseRule = ServerSideEncryptionRule
-            .builder()
-            .applyServerSideEncryptionByDefault(sseByDefault)
-            .build();
-          ServerSideEncryptionConfiguration sseConfig = ServerSideEncryptionConfiguration.builder().rules(sseRule).build();
-          PutBucketEncryptionRequest encryptionRequest = PutBucketEncryptionRequest
-            .builder()
-            .bucket(awsS3Config.vectorBucketName())
-            .serverSideEncryptionConfiguration(sseConfig)
-            .build();
-
-          var encFut = s3AsyncClient.putBucketEncryption(encryptionRequest);
-          return Completable
-            .fromCompletionStage(encFut)
-            .doOnDispose(() -> encFut.cancel(true))
-            .doOnComplete(() -> log.info("Set SSE-KMS encryption for bucket: {}", awsS3Config.vectorBucketName()))
-            .doOnError(encErr ->
-              log.error(
-                "Failed to set SSE-KMS encryption for bucket {}: {}",
-                awsS3Config.vectorBucketName(),
-                encErr.getMessage(),
-                encErr
-              )
-            );
-        } else {
-          return Completable.complete();
-        }
-      });
-
-      return createStage.andThen(encryptionStage);
     });
   }
 
