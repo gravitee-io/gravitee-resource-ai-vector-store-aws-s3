@@ -52,6 +52,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   private S3VectorsAsyncClient s3VectorsClient;
 
   private final AtomicBoolean activated = new AtomicBoolean(false);
+  private final AtomicBoolean evictionInProgress = new AtomicBoolean(false);
 
   @Override
   public void doStart() throws Exception {
@@ -78,7 +79,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         if (properties.readOnly()) {
           logReadOnly("initialization");
         }
-        evictOldVectors().subscribe();
+        triggerEviction();
       })
       .onErrorResumeNext(error -> {
         log.error("Error ensuring AWS S3 bucket/index", error);
@@ -90,7 +91,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public void doStop() throws Exception {
-    evictOldVectors().subscribe();
+    triggerEviction();
     super.doStop();
   }
 
@@ -128,7 +129,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       })
       .doOnComplete(() -> {
         log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id());
-        evictOldVectors().subscribe();
+        triggerEviction();
       });
   }
 
@@ -203,7 +204,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         log.debug("Vector {} removed from AWS S3 Vectors.", vectorEntity.id());
       }
     });
-    evictOldVectors().subscribe();
+    triggerEviction();
   }
 
   // --- Private helper methods below ---
@@ -329,7 +330,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Completable evictOldVectors() {
-    // Get eviction config from properties
     long evictTime = properties.evictTime();
     TimeUnit evictTimeUnit = properties.evictTimeUnit();
     if (evictTime <= 0 || evictTimeUnit == null) {
@@ -363,6 +363,17 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
           .fromCompletionStage(delFut)
           .doOnComplete(() -> log.info("Evicted {} old vectors.", keysToDelete.size()));
       });
+  }
+
+  private void triggerEviction() {
+    if (evictionInProgress.compareAndSet(false, true)) {
+      evictOldVectors()
+        .subscribeOn(Schedulers.io())
+        .doFinally(() -> evictionInProgress.set(false))
+        .subscribe(() -> log.debug("Eviction completed."), err -> log.error("Eviction error", err));
+    } else {
+      log.debug("Eviction already in progress, skipping.");
+    }
   }
 
   private float normalizeScore(float score) {
