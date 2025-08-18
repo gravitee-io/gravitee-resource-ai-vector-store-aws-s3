@@ -23,9 +23,11 @@ import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -76,6 +78,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         if (properties.readOnly()) {
           logReadOnly("initialization");
         }
+        evictOldVectors().subscribe();
       })
       .onErrorResumeNext(error -> {
         log.error("Error ensuring AWS S3 bucket/index", error);
@@ -83,6 +86,12 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         return Completable.complete();
       })
       .subscribe();
+  }
+
+  @Override
+  public void doStop() throws Exception {
+    evictOldVectors().subscribe();
+    super.doStop();
   }
 
   @Override
@@ -100,7 +109,14 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       .defer(() -> {
         List<Float> vectorList = toFloatList(vectorEntity.vector());
         VectorData vectorData = VectorData.fromFloat32(vectorList);
-        PutInputVector putVector = PutInputVector.builder().key(vectorEntity.id()).data(vectorData).build();
+        Map<String, Document> metadata = new java.util.HashMap<>();
+        metadata.put("createdOn", Document.fromNumber(System.currentTimeMillis()));
+        PutInputVector putVector = PutInputVector
+          .builder()
+          .key(vectorEntity.id())
+          .data(vectorData)
+          .metadata(Document.fromMap(metadata))
+          .build();
         PutVectorsRequest putRequest = PutVectorsRequest
           .builder()
           .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
@@ -110,7 +126,10 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         var fut = s3VectorsClient.putVectors(putRequest);
         return Completable.fromCompletionStage(fut).doOnDispose(() -> fut.cancel(true));
       })
-      .doOnComplete(() -> log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
+      .doOnComplete(() -> {
+        log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id());
+        evictOldVectors().subscribe();
+      });
   }
 
   @Override
@@ -184,6 +203,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         log.debug("Vector {} removed from AWS S3 Vectors.", vectorEntity.id());
       }
     });
+    evictOldVectors().subscribe();
   }
 
   // --- Private helper methods below ---
@@ -306,6 +326,43 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         .doOnComplete(() -> log.debug("Index created: {}", awsS3VectorsConfig.vectorIndexName()))
         .doOnError(err -> log.warn("Index may already exist or could not be created: {}", err.getMessage(), err));
     });
+  }
+
+  private Completable evictOldVectors() {
+    // Get eviction config from properties
+    long evictTime = properties.evictTime();
+    TimeUnit evictTimeUnit = properties.evictTimeUnit();
+    if (evictTime <= 0 || evictTimeUnit == null) {
+      return Completable.complete();
+    }
+    long cutoff = Instant.now().minus(evictTime, evictTimeUnit.toChronoUnit()).toEpochMilli();
+    var filter = Document.fromMap(Map.of("createdOn", Document.fromNumber(cutoff)));
+    QueryVectorsRequest req = QueryVectorsRequest
+      .builder()
+      .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
+      .indexName(awsS3VectorsConfig.vectorIndexName())
+      .filter(filter)
+      .returnMetadata(false)
+      .returnDistance(false)
+      .topK(1000)
+      .build();
+    var fut = s3VectorsClient.queryVectors(req);
+    return Single
+      .fromCompletionStage(fut)
+      .flatMapCompletable(resp -> {
+        List<String> keysToDelete = resp.vectors().stream().map(QueryOutputVector::key).toList();
+        if (keysToDelete.isEmpty()) return Completable.complete();
+        DeleteVectorsRequest delReq = DeleteVectorsRequest
+          .builder()
+          .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
+          .indexName(awsS3VectorsConfig.vectorIndexName())
+          .keys(keysToDelete)
+          .build();
+        var delFut = s3VectorsClient.deleteVectors(delReq);
+        return Completable
+          .fromCompletionStage(delFut)
+          .doOnComplete(() -> log.info("Evicted {} old vectors.", keysToDelete.size()));
+      });
   }
 
   private float normalizeScore(float score) {
