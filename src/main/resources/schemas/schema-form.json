@@ -72,13 +72,13 @@
           "type": "string",
           "title": "Encryption",
           "description": "S3 server-side encryption type.",
-          "enum": ["SSE-S3", "SSE-KMS"],
-          "default": "SSE-S3"
+          "enum": ["SSE_S3", "SSE_KMS", "NONE"],
+          "default": "SSE_S3"
         },
         "kmsKeyId": {
           "type": ["string", "null"],
           "title": "KMS Key ARN",
-          "description": "ARN of the KMS key if using SSE-KMS.",
+          "description": "ARN of the KMS key if using SSE_KMS.",
           "default": null
         },
         "distanceMetric": {
