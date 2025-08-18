@@ -26,11 +26,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.document.Document;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
@@ -148,7 +150,16 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
           .flattenAsFlowable(QueryVectorsResponse::vectors)
           .map(result -> {
             Map<String, Object> metadata = new java.util.HashMap<>();
-            if (result.metadata() != null) metadata.putAll(result.metadata().asMap());
+            var resultMetadata = result.metadata();
+            if (resultMetadata != null && resultMetadata.isMap()) {
+              metadata =
+                resultMetadata
+                  .asMap()
+                  .entrySet()
+                  .stream()
+                  .map(e -> Map.entry(e.getKey(), extractValue(e.getValue())))
+                  .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            }
             String text = (String) metadata.remove("text");
             metadata.remove("vector");
             float score = normalizeScore(result.distance());
@@ -341,6 +352,22 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       case EUCLIDEAN -> 2 / (2 + score);
       case COSINE, DOT -> (2 - score) / 2;
     };
+  }
+
+  private static Object extractValue(Document v) {
+    if (v.isBoolean()) {
+      return v.asBoolean();
+    } else if (v.isNumber()) {
+      return v.asNumber();
+    } else if (v.isString()) {
+      return v.asString();
+    } else if (v.isMap()) {
+      return v.asMap().entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> extractValue(e.getValue())));
+    } else if (v.isList()) {
+      return v.asList();
+    } else {
+      return v.toString();
+    }
   }
 
   private void logReadOnly(String operation) {
