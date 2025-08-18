@@ -15,7 +15,18 @@
  */
 package io.gravitee.resource.ai.vector.store.aws.s3.configuration;
 
-public enum DistanceMetric {
-  COSINE,
-  EUCLIDEAN,
-}
+/**
+ * @author Derek Thompson (derek.thompson at graviteesource.com)
+ * @author GraviteeSource Team
+ */
+public record AWSS3VectorsConfiguration(
+  String vectorBucketName,
+  String vectorIndexName,
+  EncryptionType encryption,
+  String kmsKeyId,
+  String region,
+  MetadataSchema metadataSchema,
+  String awsAccessKeyId,
+  String awsSecretAccessKey,
+  String sessionToken
+) {}
