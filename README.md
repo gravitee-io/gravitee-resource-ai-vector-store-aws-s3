@@ -48,13 +48,17 @@ To use this resource, register it with the following configuration:
 
 ### Top-Level Properties
 
-| Field         | Description                                                                 |
-|---------------|-----------------------------------------------------------------------------|
-| `embeddingSize`  | Number of embedding dimensions (must match your model and index)            |
-| `maxResults`  | Number of nearest neighbor vectors to return per query                      |
-| `similarity`  | `COSINE` or `EUCLIDEAN` — must match index configuration                    |
-| `threshold`   | Minimum similarity/distance score to return results                         |
-| `readOnly`    | If `true`, disables writes (query only)                                     |
+| Field            | Description                                                                 |
+|------------------|-----------------------------------------------------------------------------|
+| `embeddingSize`  | Size of the input embedding vector. Must match the size used by your model. |
+| `maxResults`     | Number of top similar vectors to return per query.                          |
+| `similarity`     | Similarity function: `COSINE`, `EUCLIDEAN`, or `DOT_PRODUCT`.               |
+| `threshold`      | Minimum similarity score to return results.                                 |
+| `indexType`      | Type of vector index. Supports `FLAT` or `HNSW`.                            |
+| `readOnly`       | If `true`, disables writes and only performs queries.                       |
+| `allowEviction`  | Enables automatic eviction of stale vectors.                                |
+| `evictTime`      | Time after which vectors can be evicted.                                    |
+| `evictTimeUnit`  | Time unit for eviction: `SECONDS`, `MINUTES`, etc.                          |
 
 ---
 

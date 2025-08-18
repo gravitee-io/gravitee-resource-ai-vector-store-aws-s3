@@ -6,43 +6,99 @@
     "properties": {
       "type": "object",
       "title": "Vector Store Settings",
-      "description": "Defines the vector search behavior, similarity function, and performance-related settings.",
+      "description": "Defines the vector search behavior, similarity function, eviction strategy, and performance-related settings.",
       "properties": {
         "embeddingSize": {
           "type": "integer",
           "title": "Embedding Size",
-          "description": "Number of embedding dimensions (must match your model and index).",
+          "description": "Dimension of the embedding vectors. This must match the dimensionality used by the model generating embeddings.",
           "minimum": 1,
-          "default": 1024
+          "default": 384
         },
         "maxResults": {
           "type": "integer",
           "title": "Max Results",
-          "description": "Number of nearest neighbor vectors to return per query.",
+          "description": "Maximum number of results returned in a vector search query.",
           "minimum": 1,
-          "default": 10
+          "default": 5
         },
         "similarity": {
           "type": "string",
           "title": "Similarity Function",
-          "description": "The distance metric used to compare embedding vectors. Must match the index configuration.",
+          "description": "The distance metric used to compare embedding vectors. COSINE returns similarity between 0 and 1, DOT_PRODUCT is sensitive to vector magnitude, and EUCLIDEAN computes raw distance.",
           "enum": [
             "COSINE",
-            "EUCLIDEAN"
+            "EUCLIDEAN",
+            "DOT_PRODUCT"
           ],
           "default": "COSINE"
         },
         "threshold": {
           "type": "number",
           "title": "Threshold",
-          "description": "Minimum similarity/distance score to return results.",
-          "default": 0.5
+          "description": "Minimum similarity score for a result to be considered relevant. For COSINE and DOT_PRODUCT, this ranges from 0 (least similar) to 1 (most similar). For EUCLIDEAN, lower is more similar.",
+          "default": "0.7"
+        },
+        "indexType": {
+          "type": "string",
+          "title": "Index type",
+          "enum": [
+            "FLAT",
+            "HNSW"
+          ],
+          "description": "Index type used for vector search.",
+          "default": "HNSW"
         },
         "readOnly": {
           "type": "boolean",
           "title": "Read-only",
           "description": "If true, disables writes and enables read-only access to the index.",
-          "default": false
+          "default": true
+        },
+        "allowEviction": {
+          "type": "boolean",
+          "title": "Allow Eviction",
+          "description": "Enable automatic eviction of old or unused entries from the vector store when readOnly is false.",
+          "default": false,
+          "gioConfig": {
+            "displayIf": {
+              "$eq": {
+                "value.properties.readOnly": false
+              }
+            }
+          }
+        },
+        "evictTime": {
+          "type": "integer",
+          "title": "Eviction Time",
+          "description": "Duration after which an unused vector entry can be evicted.",
+          "minimum": 1,
+          "default": 1,
+          "gioConfig": {
+            "displayIf": {
+              "$eq": {
+                "value.properties.allowEviction": true
+              }
+            }
+          }
+        },
+        "evictTimeUnit": {
+          "type": "string",
+          "title": "Eviction Time Unit",
+          "description": "Unit of time used for eviction duration. Defines how long unused vectors are retained.",
+          "enum": [
+            "MINUTES",
+            "HOURS",
+            "DAYS"
+          ],
+          "default": "HOURS",
+          "gioConfig": {
+            "displayIf": {
+              "$eq": {
+                "value.properties.allowEviction": true
+              }
+            }
+          }
         }
       },
       "required": [
@@ -50,6 +106,7 @@
         "maxResults",
         "similarity",
         "threshold",
+        "indexType",
         "readOnly"
       ]
     },
