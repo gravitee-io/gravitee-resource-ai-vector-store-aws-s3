@@ -16,7 +16,7 @@
 package io.gravitee.resource.ai.vector.store.aws.s3;
 
 import io.gravitee.resource.ai.vector.store.api.*;
-import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3Configuration;
+import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3VectorsConfiguration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AiVectorStoreAWSS3Configuration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.EncryptionType;
 import io.reactivex.rxjava3.core.Completable;
@@ -45,7 +45,7 @@ import software.amazon.awssdk.services.s3vectors.model.*;
 @Slf4j
 public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorStoreAWSS3Configuration> {
 
-  private AWSS3Configuration awsS3Config;
+  private AWSS3VectorsConfiguration awsS3VectorsConfig;
   private AiVectorStoreProperties properties;
   private S3VectorsAsyncClient s3VectorsClient;
 
@@ -56,11 +56,15 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     super.doStart();
 
     properties = super.configuration().properties();
-    awsS3Config = super.configuration().awsS3Configuration();
+    awsS3VectorsConfig = super.configuration().awsS3VectorsConfiguration();
 
-    var builder = S3VectorsAsyncClient.builder().region(Region.of(awsS3Config.region()));
+    var builder = S3VectorsAsyncClient.builder().region(Region.of(awsS3VectorsConfig.region()));
     builder.credentialsProvider(
-      buildAwsCredentialsProvider(awsS3Config.awsAccessKeyId(), awsS3Config.awsSecretAccessKey(), awsS3Config.sessionToken())
+      buildAwsCredentialsProvider(
+        awsS3VectorsConfig.awsAccessKeyId(),
+        awsS3VectorsConfig.awsSecretAccessKey(),
+        awsS3VectorsConfig.sessionToken()
+      )
     );
     s3VectorsClient = builder.build();
 
@@ -99,8 +103,8 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         PutInputVector putVector = PutInputVector.builder().key(vectorEntity.id()).data(vectorData).build();
         PutVectorsRequest putRequest = PutVectorsRequest
           .builder()
-          .vectorBucketName(awsS3Config.vectorBucketName())
-          .indexName(awsS3Config.vectorIndexName())
+          .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
+          .indexName(awsS3VectorsConfig.vectorIndexName())
           .vectors(putVector)
           .build();
         var fut = s3VectorsClient.putVectors(putRequest);
@@ -120,8 +124,8 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         List<Float> vectorList = toFloatList(queryEntity.vector());
         QueryVectorsRequest req = QueryVectorsRequest
           .builder()
-          .vectorBucketName(awsS3Config.vectorBucketName())
-          .indexName(awsS3Config.vectorIndexName())
+          .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
+          .indexName(awsS3VectorsConfig.vectorIndexName())
           .queryVector(VectorData.fromFloat32(vectorList))
           .topK(properties.maxResults())
           .returnDistance(true)
@@ -167,8 +171,8 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     }
     DeleteVectorsRequest deleteRequest = DeleteVectorsRequest
       .builder()
-      .vectorBucketName(awsS3Config.vectorBucketName())
-      .indexName(awsS3Config.vectorIndexName())
+      .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
+      .indexName(awsS3VectorsConfig.vectorIndexName())
       .keys(vectorEntity.id())
       .build();
 
@@ -199,7 +203,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   private Single<Boolean> indexExists() {
     return Single.defer(() -> {
       var fut = s3VectorsClient.getIndex(b ->
-        b.vectorBucketName(awsS3Config.vectorBucketName()).indexName(awsS3Config.vectorIndexName())
+        b.vectorBucketName(awsS3VectorsConfig.vectorBucketName()).indexName(awsS3VectorsConfig.vectorIndexName())
       );
 
       return Single
@@ -208,7 +212,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         .onErrorResumeNext(err -> {
           Throwable e = unwrapCompletion(err);
           if (e instanceof S3VectorsException s3ve && s3ve.statusCode() == 404) {
-            log.warn("Index does not exist: {}", awsS3Config.vectorIndexName());
+            log.warn("Index does not exist: {}", awsS3VectorsConfig.vectorIndexName());
             return Single.just(false);
           }
           log.error("Error checking index existence: {}", e.getMessage());
@@ -238,7 +242,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   }
 
   private Completable ensureBucketAndIndex() {
-    return bucketExists(awsS3Config.vectorBucketName())
+    return bucketExists(awsS3VectorsConfig.vectorBucketName())
       .flatMapCompletable(exists -> exists ? Completable.complete() : createBucket())
       .andThen(indexExists().flatMapCompletable(exists -> exists ? Completable.complete() : createIndex()));
   }
@@ -247,15 +251,15 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     return Completable.defer(() -> {
       CreateVectorBucketRequest.Builder builder = CreateVectorBucketRequest
         .builder()
-        .vectorBucketName(awsS3Config.vectorBucketName());
+        .vectorBucketName(awsS3VectorsConfig.vectorBucketName());
 
-      if (awsS3Config.encryption() != null && awsS3Config.encryption() != EncryptionType.NONE) {
+      if (awsS3VectorsConfig.encryption() != null && awsS3VectorsConfig.encryption() != EncryptionType.NONE) {
         EncryptionConfiguration.Builder encBuilder = EncryptionConfiguration.builder();
-        switch (awsS3Config.encryption()) {
+        switch (awsS3VectorsConfig.encryption()) {
           case SSE_KMS -> {
             encBuilder.sseType(SseType.AWS_KMS);
-            if (awsS3Config.kmsKeyId() != null && !awsS3Config.kmsKeyId().isEmpty()) {
-              encBuilder.kmsKeyArn(awsS3Config.kmsKeyId());
+            if (awsS3VectorsConfig.kmsKeyId() != null && !awsS3VectorsConfig.kmsKeyId().isEmpty()) {
+              encBuilder.kmsKeyArn(awsS3VectorsConfig.kmsKeyId());
             } else {
               return Completable.error(
                 new IllegalArgumentException("SSE_KMS encryption selected but no KMS Key ARN provided.")
@@ -272,8 +276,9 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       return Completable
         .fromCompletionStage(createFut)
         .doOnDispose(() -> createFut.cancel(true))
-        .doOnComplete(() -> log.info("Created S3 Vectors bucket: {}", awsS3Config.vectorBucketName()))
-        .doOnError(err -> log.error("Failed to create bucket {}: {}", awsS3Config.vectorBucketName(), err.getMessage(), err)
+        .doOnComplete(() -> log.info("Created S3 Vectors bucket: {}", awsS3VectorsConfig.vectorBucketName()))
+        .doOnError(err ->
+          log.error("Failed to create bucket {}: {}", awsS3VectorsConfig.vectorBucketName(), err.getMessage(), err)
         );
     });
   }
@@ -282,15 +287,15 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     return Completable.defer(() -> {
       MetadataConfiguration metadataConfig = MetadataConfiguration
         .builder()
-        .nonFilterableMetadataKeys(awsS3Config.metadataSchema().nonFilterable())
+        .nonFilterableMetadataKeys(awsS3VectorsConfig.metadataSchema().nonFilterable())
         .build();
 
       CreateIndexRequest req = CreateIndexRequest
         .builder()
-        .vectorBucketName(awsS3Config.vectorBucketName())
-        .indexName(awsS3Config.vectorIndexName())
+        .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
+        .indexName(awsS3VectorsConfig.vectorIndexName())
         .dimension(properties.embeddingSize())
-        .distanceMetric(awsS3Config.distanceMetric().name())
+        .distanceMetric(properties.similarity().name())
         .metadataConfiguration(metadataConfig)
         .build();
 
@@ -298,7 +303,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       return Completable
         .fromCompletionStage(fut)
         .doOnDispose(() -> fut.cancel(true))
-        .doOnComplete(() -> log.debug("Index created: {}", awsS3Config.vectorIndexName()))
+        .doOnComplete(() -> log.debug("Index created: {}", awsS3VectorsConfig.vectorIndexName()))
         .doOnError(err -> log.warn("Index may already exist or could not be created: {}", err.getMessage(), err));
     });
   }
@@ -330,8 +335,8 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     log.warn(
       "Resource is read-only. Skipping {} operation for bucket {} and index {}.",
       operation,
-      awsS3Config.vectorBucketName(),
-      awsS3Config.vectorIndexName()
+      awsS3VectorsConfig.vectorBucketName(),
+      awsS3VectorsConfig.vectorIndexName()
     );
   }
 
@@ -339,8 +344,8 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     log.warn(
       "Resource not activated. Skipping {} operation for bucket {} and index {}.",
       operation,
-      awsS3Config.vectorBucketName(),
-      awsS3Config.vectorIndexName()
+      awsS3VectorsConfig.vectorBucketName(),
+      awsS3VectorsConfig.vectorIndexName()
     );
   }
 
