@@ -27,5 +27,6 @@ public record AWSS3VectorsConfiguration(
   String region,
   String awsAccessKeyId,
   String awsSecretAccessKey,
-  String sessionToken
+  String sessionToken,
+  String resourceContextKey
 ) {}
