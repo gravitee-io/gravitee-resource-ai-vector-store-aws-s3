@@ -25,18 +25,17 @@
         "similarity": {
           "type": "string",
           "title": "Similarity Function",
-          "description": "The distance metric used to compare embedding vectors. COSINE returns similarity between 0 and 1, DOT_PRODUCT is sensitive to vector magnitude, and EUCLIDEAN computes raw distance.",
+          "description": "The distance metric used to compare embedding vectors. COSINE measures the cosine of the angle between vectors. Best for normalized vectors and when direction matters more than magnitude.  EUCLIDEAN measures the straight-line distance between vectors. Best when both direction and magnitude are important.",
           "enum": [
             "COSINE",
-            "EUCLIDEAN",
-            "DOT_PRODUCT"
+            "EUCLIDEAN"
           ],
           "default": "COSINE"
         },
         "threshold": {
           "type": "number",
           "title": "Threshold",
-          "description": "Minimum similarity score for a result to be considered relevant. For COSINE and DOT_PRODUCT, this ranges from 0 (least similar) to 1 (most similar). For EUCLIDEAN, lower is more similar.",
+          "description": "Minimum similarity score for a result to be considered relevant. For COSINE, this ranges from 0 (least similar) to 1 (most similar). For EUCLIDEAN, lower is more similar.",
           "default": "0.7"
         },
         "readOnly": {
