@@ -39,16 +39,6 @@
           "description": "Minimum similarity score for a result to be considered relevant. For COSINE and DOT_PRODUCT, this ranges from 0 (least similar) to 1 (most similar). For EUCLIDEAN, lower is more similar.",
           "default": "0.7"
         },
-        "indexType": {
-          "type": "string",
-          "title": "Index type",
-          "enum": [
-            "FLAT",
-            "HNSW"
-          ],
-          "description": "Index type used for vector search.",
-          "default": "HNSW"
-        },
         "readOnly": {
           "type": "boolean",
           "title": "Read-only",
@@ -106,7 +96,6 @@
         "maxResults",
         "similarity",
         "threshold",
-        "indexType",
         "readOnly"
       ]
     },
@@ -143,26 +132,6 @@
           "title": "AWS Region",
           "description": "AWS region where the bucket/index exist."
         },
-        "metadataSchema": {
-          "type": "object",
-          "title": "Metadata Schema",
-          "description": "Defines which metadata keys are filterable/non-filterable.",
-          "properties": {
-            "filterable": {
-              "type": "array",
-              "title": "Filterable Metadata Keys",
-              "items": { "type": "string" },
-              "default": []
-            },
-            "nonFilterable": {
-              "type": "array",
-              "title": "Non-Filterable Metadata Keys",
-              "items": { "type": "string" },
-              "default": []
-            }
-          },
-          "required": ["filterable", "nonFilterable"]
-        },
         "awsAccessKeyId": {
           "type": "string",
           "title": "AWS Access Key ID",
@@ -186,7 +155,6 @@
         "vectorIndexName",
         "encryption",
         "region",
-        "metadataSchema",
         "awsAccessKeyId",
         "awsSecretAccessKey"
       ]

@@ -306,18 +306,12 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   private Completable createIndex() {
     return Completable.defer(() -> {
-      MetadataConfiguration metadataConfig = MetadataConfiguration
-        .builder()
-        .nonFilterableMetadataKeys(awsS3VectorsConfig.metadataSchema().nonFilterable())
-        .build();
-
       CreateIndexRequest req = CreateIndexRequest
         .builder()
         .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
         .indexName(awsS3VectorsConfig.vectorIndexName())
         .dimension(properties.embeddingSize())
         .distanceMetric(properties.similarity().name())
-        .metadataConfiguration(metadataConfig)
         .build();
 
       var fut = s3VectorsClient.createIndex(req);

@@ -25,7 +25,6 @@ public record AWSS3VectorsConfiguration(
   EncryptionType encryption,
   String kmsKeyId,
   String region,
-  MetadataSchema metadataSchema,
   String awsAccessKeyId,
   String awsSecretAccessKey,
   String sessionToken

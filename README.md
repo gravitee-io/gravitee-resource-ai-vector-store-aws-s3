@@ -30,10 +30,6 @@ To use this resource, register it with the following configuration:
       "kmsKeyId": null,
       "distanceMetric": "COSINE",
       "region": "us-east-1",
-      "metadataSchema": {
-        "filterable": ["timestamp", "category"],
-        "nonFilterable": ["sourceText"]
-      },
       "awsAccessKeyId": "...",
       "awsSecretAccessKey": "...",
       "sessionToken": null
@@ -52,30 +48,27 @@ To use this resource, register it with the following configuration:
 |------------------|-----------------------------------------------------------------------------|
 | `embeddingSize`  | Size of the input embedding vector. Must match the size used by your model. |
 | `maxResults`     | Number of top similar vectors to return per query.                          |
-| `similarity`     | Similarity function: `COSINE`, `EUCLIDEAN`, or `DOT_PRODUCT`.               |
+| `similarity`     | Similarity function: `COSINE` or `EUCLIDEAN`.                               |
 | `threshold`      | Minimum similarity score to return results.                                 |
-| `indexType`      | Type of vector index. Supports `FLAT` or `HNSW`.                            |
 | `readOnly`       | If `true`, disables writes and only performs queries.                       |
 | `allowEviction`  | Enables automatic eviction of stale vectors.                                |
 | `evictTime`      | Time after which vectors can be evicted.                                    |
-| `evictTimeUnit`  | Time unit for eviction: `SECONDS`, `MINUTES`, etc.                          |
+| `evictTimeUnit`  | Time unit for eviction: `SECONDS`, `MINUTES`, or `HOURS`.                    |
 
 ---
 
 ### S3 Vectors Configuration
 
-| Field               | Description                                                               |
-|---------------------|---------------------------------------------------------------------------|
-| `vectorBucketName`  | S3 vector bucket name (3–63 lowercase, numbers, hyphens)                  |
-| `vectorIndexName`   | Index name within the bucket; immutable after creation                    |
-| `encryption`        | `"SSE-S3"` or `"SSE-KMS"`                                                 |
-| `kmsKeyId`          | ARN of the KMS key if using `"SSE-KMS"`                                   |
-| `distanceMetric`    | `"COSINE"` or `"EUCLIDEAN"` — must match index metric                     |
-| `metadataSchema`    | Defines which metadata keys are filterable/non-filterable                 |
-| `region`            | AWS region where the bucket/index exist                                   |
-| `awsAccessKeyId`    | AWS access key ID                                                         |
-| `awsSecretAccessKey`| AWS secret access key                                                     |
-| `sessionToken`      | AWS session token (optional)                                              |
+| Field               | Description                                              |
+|---------------------|----------------------------------------------------------|
+| `vectorBucketName`  | S3 vector bucket name (3–63 lowercase, numbers, hyphens) |
+| `vectorIndexName`   | Index name within the bucket; immutable after creation   |
+| `encryption`        | `"SSE_S3"` or `"SSE_KMS"`                                |
+| `kmsKeyId`          | ARN of the KMS key if using `"SSE_KMS"`                  |
+| `region`            | AWS region where the bucket/index exist                  |
+| `awsAccessKeyId`    | AWS access key ID                                        |
+| `awsSecretAccessKey`| AWS secret access key                                    |
+| `sessionToken`      | AWS session token (optional)                             |
 
 ---
 
