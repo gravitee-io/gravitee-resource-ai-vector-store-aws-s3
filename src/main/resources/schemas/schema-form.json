@@ -113,6 +113,12 @@
           "title": "Vector Index Name",
           "description": "Index name within the bucket; immutable after creation."
         },
+        "resourceContextKey": {
+            "type": "string",
+            "title": "Resource Context Key",
+            "description": "Optional key for resource context, used for multi-tenant isolation.",
+            "default": null
+        },
         "encryption": {
           "type": "string",
           "title": "Encryption",
