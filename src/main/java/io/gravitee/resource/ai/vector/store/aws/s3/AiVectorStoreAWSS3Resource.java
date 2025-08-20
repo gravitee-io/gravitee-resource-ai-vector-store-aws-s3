@@ -52,7 +52,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   private S3VectorsAsyncClient s3VectorsClient;
 
   private final AtomicBoolean activated = new AtomicBoolean(false);
-  private final AtomicBoolean evictionInProgress = new AtomicBoolean(false);
 
   @Override
   public void doStart() throws Exception {
@@ -79,7 +78,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         if (properties.readOnly()) {
           logReadOnly("initialization");
         }
-        triggerEviction();
       })
       .onErrorResumeNext(error -> {
         log.error("Error ensuring AWS S3 bucket/index", error);
@@ -91,7 +89,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public void doStop() throws Exception {
-    triggerEviction();
+    s3VectorsClient.close();
     super.doStop();
   }
 
@@ -111,7 +109,12 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         List<Float> vectorList = toFloatList(vectorEntity.vector());
         VectorData vectorData = VectorData.fromFloat32(vectorList);
         Map<String, Document> metadata = new java.util.HashMap<>();
-        metadata.put("createdOn", Document.fromNumber(System.currentTimeMillis()));
+        if (properties.allowEviction()) {
+          long evictTime = properties.evictTime();
+          TimeUnit evictTimeUnit = properties.evictTimeUnit();
+          Instant expireAt = Instant.now().plus(evictTime, evictTimeUnit.toChronoUnit());
+          metadata.put("expireAt", Document.fromString(expireAt.toString())); // ISO 8601 UTC
+        }
         PutInputVector putVector = PutInputVector
           .builder()
           .key(vectorEntity.id())
@@ -129,7 +132,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       })
       .doOnComplete(() -> {
         log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id());
-        triggerEviction();
       });
   }
 
@@ -204,7 +206,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         log.debug("Vector {} removed from AWS S3 Vectors.", vectorEntity.id());
       }
     });
-    triggerEviction();
   }
 
   // --- Private helper methods below ---
@@ -321,53 +322,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         .doOnComplete(() -> log.debug("Index created: {}", awsS3VectorsConfig.vectorIndexName()))
         .doOnError(err -> log.warn("Index may already exist or could not be created: {}", err.getMessage(), err));
     });
-  }
-
-  private Completable evictOldVectors() {
-    long evictTime = properties.evictTime();
-    TimeUnit evictTimeUnit = properties.evictTimeUnit();
-    if (evictTime <= 0 || evictTimeUnit == null) {
-      return Completable.complete();
-    }
-    long cutoff = Instant.now().minus(evictTime, evictTimeUnit.toChronoUnit()).toEpochMilli();
-    var filter = Document.fromMap(Map.of("createdOn", Document.fromNumber(cutoff)));
-    QueryVectorsRequest req = QueryVectorsRequest
-      .builder()
-      .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
-      .indexName(awsS3VectorsConfig.vectorIndexName())
-      .filter(filter)
-      .returnMetadata(false)
-      .returnDistance(false)
-      .topK(1000)
-      .build();
-    var fut = s3VectorsClient.queryVectors(req);
-    return Single
-      .fromCompletionStage(fut)
-      .flatMapCompletable(resp -> {
-        List<String> keysToDelete = resp.vectors().stream().map(QueryOutputVector::key).toList();
-        if (keysToDelete.isEmpty()) return Completable.complete();
-        DeleteVectorsRequest delReq = DeleteVectorsRequest
-          .builder()
-          .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
-          .indexName(awsS3VectorsConfig.vectorIndexName())
-          .keys(keysToDelete)
-          .build();
-        var delFut = s3VectorsClient.deleteVectors(delReq);
-        return Completable
-          .fromCompletionStage(delFut)
-          .doOnComplete(() -> log.info("Evicted {} old vectors.", keysToDelete.size()));
-      });
-  }
-
-  private void triggerEviction() {
-    if (evictionInProgress.compareAndSet(false, true)) {
-      evictOldVectors()
-        .subscribeOn(Schedulers.io())
-        .doFinally(() -> evictionInProgress.set(false))
-        .subscribe(() -> log.debug("Eviction completed."), err -> log.error("Eviction error", err));
-    } else {
-      log.debug("Eviction already in progress, skipping.");
-    }
   }
 
   private float normalizeScore(float score) {
