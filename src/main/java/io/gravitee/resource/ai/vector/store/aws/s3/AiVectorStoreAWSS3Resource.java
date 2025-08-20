@@ -53,6 +53,16 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   private final AtomicBoolean activated = new AtomicBoolean(false);
 
+  private static final String RETRIEVAL_CONTEXT_KEY_ATTR = "retrieval_context_key";
+  private static final String EXPIRE_AT_ATTR = "expireAt";
+  private static final String TEXT_ATTR = "text";
+  private static final String VECTOR_ATTR = "vector";
+
+  private static final String FIND_RELEVANT_OPERATION = "findRelevant";
+  private static final String ADD_OPERATION = "add";
+  private static final String REMOVE_OPERATION = "remove";
+  private static final String INITIALIZATION_OPERATION = "initialization";
+
   @Override
   public void doStart() throws Exception {
     super.doStart();
@@ -76,7 +86,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         log.debug("AWS S3 bucket and Vectors index ready.");
         activated.set(true);
         if (properties.readOnly()) {
-          logReadOnly("initialization");
+          logReadOnly(INITIALIZATION_OPERATION);
         }
       })
       .onErrorResumeNext(error -> {
@@ -96,11 +106,11 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   @Override
   public Completable add(VectorEntity vectorEntity) {
     if (!activated.get()) {
-      logNotActivated("add");
+      logNotActivated(ADD_OPERATION);
       return Completable.complete();
     }
     if (properties.readOnly()) {
-      logReadOnly("add");
+      logReadOnly(ADD_OPERATION);
       return Completable.complete();
     }
 
@@ -113,7 +123,13 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
           long evictTime = properties.evictTime();
           TimeUnit evictTimeUnit = properties.evictTimeUnit();
           Instant expireAt = Instant.now().plus(evictTime, evictTimeUnit.toChronoUnit());
-          metadata.put("expireAt", Document.fromString(expireAt.toString())); // ISO 8601 UTC
+          metadata.put(EXPIRE_AT_ATTR, Document.fromString(expireAt.toString()));
+        }
+        if (vectorEntity.metadata() != null && vectorEntity.metadata().containsKey(RETRIEVAL_CONTEXT_KEY_ATTR)) {
+          Object contextValue = vectorEntity.metadata().get(RETRIEVAL_CONTEXT_KEY_ATTR);
+          if (contextValue != null) {
+            metadata.put(RETRIEVAL_CONTEXT_KEY_ATTR, Document.fromString(contextValue.toString()));
+          }
         }
         PutInputVector putVector = PutInputVector
           .builder()
@@ -138,7 +154,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   @Override
   public Flowable<VectorResult> findRelevant(VectorEntity queryEntity) {
     if (!activated.get()) {
-      logNotActivated("findRelevant");
+      logNotActivated(FIND_RELEVANT_OPERATION);
       return Flowable.empty();
     }
     return Flowable
@@ -171,8 +187,8 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
                   .map(e -> Map.entry(e.getKey(), extractValue(e.getValue())))
                   .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
             }
-            String text = (String) metadata.remove("text");
-            metadata.remove("vector");
+            String text = (String) metadata.remove(TEXT_ATTR);
+            metadata.remove(VECTOR_ATTR);
             float score = normalizeScore(result.distance());
             return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
           })
@@ -184,11 +200,11 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   @Override
   public void remove(VectorEntity vectorEntity) {
     if (!activated.get()) {
-      logNotActivated("remove");
+      logNotActivated(REMOVE_OPERATION);
       return;
     }
     if (properties.readOnly()) {
-      logReadOnly("remove");
+      logReadOnly(REMOVE_OPERATION);
       return;
     }
     DeleteVectorsRequest deleteRequest = DeleteVectorsRequest
