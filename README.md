@@ -44,16 +44,16 @@ To use this resource, register it with the following configuration:
 
 ### Top-Level Properties
 
-| Field            | Description                                                                 |
-|------------------|-----------------------------------------------------------------------------|
-| `embeddingSize`  | Size of the input embedding vector. Must match the size used by your model. |
-| `maxResults`     | Number of top similar vectors to return per query.                          |
-| `similarity`     | Similarity function: `COSINE` or `EUCLIDEAN`.                               |
-| `threshold`      | Minimum similarity score to return results.                                 |
-| `readOnly`       | If `true`, disables writes and only performs queries.                       |
-| `allowEviction`  | Enables automatic eviction of stale vectors.                                |
-| `evictTime`      | Time after which vectors can be evicted.                                    |
-| `evictTimeUnit`  | Time unit for eviction: `SECONDS`, `MINUTES`, or `HOURS`.                    |
+| Field            | Description                                                                            |
+|------------------|----------------------------------------------------------------------------------------|
+| `embeddingSize`  | Size of the input embedding vector. Must match the size used by your model.            |
+| `maxResults`     | Number of top similar vectors to return per query.                                     |
+| `similarity`     | Similarity function: `COSINE` or `EUCLIDEAN`.                                          |
+| `threshold`      | Minimum similarity score to return results.                                            |
+| `readOnly`       | If `true`, disables writes and only performs queries.                                  |
+| `allowEviction`  | Enables setting `expireBy` metadata field that can be used to expire stale vector data |
+| `evictTime`      | Time after which vectors can be evicted.                                               |
+| `evictTimeUnit`  | Time unit for eviction: `SECONDS`, `MINUTES`, or `HOURS`.                              |
 
 ---
 
