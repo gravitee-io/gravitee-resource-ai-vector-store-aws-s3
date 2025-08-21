@@ -21,14 +21,16 @@ To use this resource, register it with the following configuration:
       "maxResults": 10,
       "similarity": "COSINE",
       "threshold": 0.5,
-      "readOnly": false
+      "readOnly": false,
+      "allowEviction": true,
+      "evictTime": 1,
+      "evictTimeUnit": "HOURS"
     },
-    "s3VectorsConfig": {
+    "awsS3VectorsConfiguration": {
       "vectorBucketName": "my-vector-bucket",
       "vectorIndexName": "default-index",
-      "encryption": "SSE-S3",
+      "encryption": "SSE_S3",
       "kmsKeyId": null,
-      "distanceMetric": "COSINE",
       "region": "us-east-1",
       "awsAccessKeyId": "...",
       "awsSecretAccessKey": "...",
@@ -51,39 +53,50 @@ To use this resource, register it with the following configuration:
 | `similarity`     | Similarity function: `COSINE` or `EUCLIDEAN`.                                          |
 | `threshold`      | Minimum similarity score to return results.                                            |
 | `readOnly`       | If `true`, disables writes and only performs queries.                                  |
-| `allowEviction`  | Enables setting `expireBy` metadata field that can be used to expire stale vector data |
-| `evictTime`      | Time after which vectors can be evicted.                                               |
-| `evictTimeUnit`  | Time unit for eviction: `SECONDS`, `MINUTES`, or `HOURS`.                              |
+| `allowEviction`  | If `true`, sets an `expireAt` metadata field on vectors. Eviction is consumer-managed. |
+| `evictTime`      | Time after which vectors are considered expired (for tagging only).                    |
+| `evictTimeUnit`  | Time unit for eviction: `MINUTES`, `HOURS`, or `DAYS`.                                |
 
 ---
 
-### S3 Vectors Configuration
+### AWS S3 Vectors Configuration
 
-| Field               | Description                                              |
-|---------------------|----------------------------------------------------------|
-| `vectorBucketName`  | S3 vector bucket name (3–63 lowercase, numbers, hyphens) |
-| `vectorIndexName`   | Index name within the bucket; immutable after creation   |
-| `encryption`        | `"SSE_S3"` or `"SSE_KMS"`                                |
-| `kmsKeyId`          | ARN of the KMS key if using `"SSE_KMS"`                  |
-| `region`            | AWS region where the bucket/index exist                  |
-| `awsAccessKeyId`    | AWS access key ID                                        |
-| `awsSecretAccessKey`| AWS secret access key                                    |
-| `sessionToken`      | AWS session token (optional)                             |
+| Field                   | Description                                              |
+|-------------------------|----------------------------------------------------------|
+| `vectorBucketName`      | S3 vector bucket name (3–63 lowercase, numbers, hyphens) |
+| `vectorIndexName`       | Index name within the bucket; immutable after creation   |
+| `encryption`            | `"SSE_S3"`, `"SSE_KMS"`, or `"NONE"`                   |
+| `kmsKeyId`              | ARN of the KMS key if using `"SSE_KMS"`                 |
+| `region`                | AWS region where the bucket/index exist                  |
+| `awsAccessKeyId`        | AWS access key ID                                        |
+| `awsSecretAccessKey`    | AWS secret access key                                    |
+| `sessionToken`          | AWS session token (optional)                             |
 
 ---
 
 ## 🧑‍💼 Multi-Tenant Isolation via Metadata
 
-To enable multi-tenant isolation, include a unique context key (e.g., `retrieval_context_key`) in the metadata of each vector when adding. Queries and deletions can be filtered using this metadata key as needed.
+To enable multi-tenant isolation, include a unique context key (`retrieval_context_key`) in the metadata of each vector when adding. Queries can be filtered using this metadata key. Deletions are not filtered by this key in the resource implementation.
+
+---
+
+## 🧠 How It Works
+
+1. **Initialization:** On startup, the resource ensures the S3 bucket and index exist, creating them if necessary. The index is created with the dimension and distance metric specified in `properties`.
+2. **Adding Vectors:** Vectors are added one at a time. If `allowEviction` is enabled, an `expireAt` metadata field is set. If `retrieval_context_key` is present in metadata, it is stored for isolation.
+3. **Querying Vectors:** Queries can filter by `retrieval_context_key` in metadata. Results include similarity/distance scores and metadata.
+4. **Removing Vectors:** Vectors are removed by key. No metadata filtering is applied to deletions.
+5. **Eviction:** The resource only tags vectors with `expireAt`; consumers must implement their own cleanup logic to remove expired vectors.
 
 ---
 
 ## 🧠 Example Usage Pattern
 
-1. **Create a vector bucket and index** via AWS Console, CLI, or SDK. Set dimensions, distance metric, and (optionally) a filterable metadata key for tenant isolation.
-2. **Insert vectors** using the PutVectors API (max 500 vectors per call). Each vector has a unique key, float32 embedding matching `dimensions`, and metadata. Include a context key in metadata for multi-tenant isolation if desired.
-3. **Query vectors** using QueryVectors API, optionally filtering on filterable metadata keys, and returning similarity/distance scores and metadata if requested.
-4. **Delete vectors** using DeleteVectors API, optionally filtering by metadata key.
+1. **Create a vector bucket and index** via AWS Console, CLI, SDK, or let the resource create them. Set dimensions and distance metric via configuration.
+2. **Insert vectors** one at a time using the resource API. Each vector has a unique key, float32 embedding matching `embeddingSize`, and metadata. Include `retrieval_context_key` in metadata for multi-tenant isolation if desired.
+3. **Query vectors** using the resource API, optionally filtering on `retrieval_context_key` in metadata, and returning similarity/distance scores and metadata.
+4. **Delete vectors** using the resource API by key. No metadata filtering is applied to deletions.
+5. **Eviction** (if enabled): Vectors are tagged with `expireAt` in metadata. Consumers must periodically remove expired vectors.
 
 ---
 
@@ -91,10 +104,18 @@ To enable multi-tenant isolation, include a unique context key (e.g., `retrieval
 - Fully managed, no infrastructure to run or patch
 - Scales to millions/billions of vectors and thousands of indexes
 - Low-cost, up to 90% cheaper than dedicated vector DBs
-- Strong read-after-write consistency
+- Strong read-after-write consistency (provided by AWS S3 Vectors)
 - Fine-grained IAM-based access control
 - Seamless integration with Bedrock Knowledge Bases and OpenSearch
 - Multi-tenant isolation via metadata keys
+
+---
+
+## ⚠️ Limitations
+- No automatic eviction: expired vectors are only tagged; consumers must remove them
+- Only single vector operations are supported (no batch insert)
+- Deletions are by key only; no metadata filtering
+- Index distance metric is set via `similarity` property
 
 ---
 
@@ -102,7 +123,7 @@ To enable multi-tenant isolation, include a unique context key (e.g., `retrieval
 
 - `COSINE`: Ideal for normalized embeddings.
 - `EUCLIDEAN`: Computes L2 distance.
-> **Note:** The index’s `distanceMetric` must match your configured `similarity` for correct results.
+> **Note:** The index’s distance metric is set from the `similarity` property and must match your embeddings.
 
 ---
 
@@ -111,16 +132,17 @@ To enable multi-tenant isolation, include a unique context key (e.g., `retrieval
 - Retrieval-Augmented Generation (RAG) with Amazon Bedrock
 - Semantic search over large document/media sets
 - Agent memory/context vector storage
-- Multi-tenant indexing (separate buckets, index prefixes, or via metadata keys)
+- Multi-tenant indexing (via metadata keys)
 
 ---
 
 ## 📌 Summary
 
 This **S3‑Tensors (Amazon S3 Vectors)** resource delivers a fully managed, scalable, cost-efficient vector store on S3. It is ideal for production-grade RAG and semantic search pipelines, with strong AWS-native integration, and multi-tenant isolation.
+
 ---
 
-## 🚀 Example SDK Usage (Java + RxJava Maybe + AWS SDK v2)
+## 🚀 Example SDK Usage (Java + RxJava + AWS SDK v2)
 
 ```java
 import software.amazon.awssdk.services.s3vectors.S3VectorsAsyncClient;
@@ -144,12 +166,12 @@ public class S3VectorsRxJavaExample {
         this.client = client;
     }
 
-    public Maybe<Void> putVectors(List<PutInputVector> vectors) {
+    public Maybe<Void> putVector(PutInputVector vector) {
         CompletableFuture<Void> fut = client
             .putVectors(PutVectorsRequest.builder()
                 .vectorBucketName(vectorBucketName)
                 .indexName(vectorIndexName)
-                .vectors(vectors)
+                .vectors(vector)
                 .build())
             .thenApply(resp -> null);
         return Maybe.fromFuture(fut);
@@ -188,20 +210,18 @@ public class S3VectorsRxJavaExample {
 
         S3VectorsRxJavaExample example = new S3VectorsRxJavaExample(client);
 
-        List<PutInputVector> toInsert = List.of(
-            PutInputVector.builder()
-                .key("vec1")
-                .data(d -> d.float32(List.of(/* floats matching dimensions */)))
-                .metadata(Map.of("category","A","timestamp","168"))
-                .build()
-        );
+        PutInputVector toInsert = PutInputVector.builder()
+            .key("vec1")
+            .data(d -> d.float32(List.of(/* floats matching dimensions */)))
+            .metadata(Map.of("retrieval_context_key","tenant-xyz","timestamp","168"))
+            .build();
 
-        example.putVectors(toInsert)
-            .doOnSuccess(v -> System.out.println("Inserted vectors"))
+        example.putVector(toInsert)
+            .doOnSuccess(v -> System.out.println("Inserted vector"))
             .flatMap(v -> example.queryNearest(
                 List.of(/* query floats matching dimensions */),
                 10,
-                Map.of("category","A"),
+                Map.of("retrieval_context_key","tenant-xyz"),
                 true,
                 true))
             .subscribe(results -> {
