@@ -47,11 +47,11 @@ import software.amazon.awssdk.services.s3vectors.model.*;
 @Slf4j
 public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorStoreAWSS3Configuration> {
 
-  private AWSS3VectorsConfiguration awsS3VectorsConfig;
-  private AiVectorStoreProperties properties;
-  private S3VectorsAsyncClient s3VectorsClient;
+  AWSS3VectorsConfiguration awsS3VectorsConfig;
+  AiVectorStoreProperties properties;
+  S3VectorsAsyncClient s3VectorsClient;
 
-  private final AtomicBoolean activated = new AtomicBoolean(false);
+  final AtomicBoolean activated = new AtomicBoolean(false);
 
   private static final String RETRIEVAL_CONTEXT_KEY_ATTR = "retrieval_context_key";
   private static final String EXPIRE_AT_ATTR = "expireAt";
@@ -146,9 +146,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         var fut = s3VectorsClient.putVectors(putRequest);
         return Completable.fromCompletionStage(fut).doOnDispose(() -> fut.cancel(true));
       })
-      .doOnComplete(() -> {
-        log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id());
-      });
+      .doOnComplete(() -> log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
   }
 
   @Override
@@ -189,7 +187,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
             }
             String text = (String) metadata.remove(TEXT_ATTR);
             metadata.remove(VECTOR_ATTR);
-            float score = normalizeScore(result.distance());
+            float score = properties.similarity().normalizeDistance(result.distance());
             return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
           })
           .filter(vr -> vr.score() >= properties.threshold());
@@ -224,13 +222,9 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     });
   }
 
-  // --- Private helper methods below ---
+  // --- Package private helper methods below ---
 
-  private AwsCredentialsProvider buildAwsCredentialsProvider(
-    String accessKeyId,
-    String secretAccessKey,
-    String sessionToken
-  ) {
+  AwsCredentialsProvider buildAwsCredentialsProvider(String accessKeyId, String secretAccessKey, String sessionToken) {
     if (sessionToken != null && !sessionToken.isEmpty()) {
       return StaticCredentialsProvider.create(AwsSessionCredentials.create(accessKeyId, secretAccessKey, sessionToken));
     } else {
@@ -238,7 +232,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     }
   }
 
-  private Single<Boolean> indexExists() {
+  Single<Boolean> indexExists() {
     return Single.defer(() -> {
       var fut = s3VectorsClient.getIndex(b ->
         b.vectorBucketName(awsS3VectorsConfig.vectorBucketName()).indexName(awsS3VectorsConfig.vectorIndexName())
@@ -260,7 +254,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     });
   }
 
-  private Single<Boolean> bucketExists(String bucketName) {
+  Single<Boolean> bucketExists(String bucketName) {
     return Single.defer(() -> {
       var fut = s3VectorsClient.getVectorBucket(b -> b.vectorBucketName(bucketName));
       return Single
@@ -279,13 +273,13 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     });
   }
 
-  private Completable ensureBucketAndIndex() {
+  Completable ensureBucketAndIndex() {
     return bucketExists(awsS3VectorsConfig.vectorBucketName())
       .flatMapCompletable(exists -> exists ? Completable.complete() : createBucket())
       .andThen(indexExists().flatMapCompletable(exists -> exists ? Completable.complete() : createIndex()));
   }
 
-  private Completable createBucket() {
+  Completable createBucket() {
     return Completable.defer(() -> {
       CreateVectorBucketRequest.Builder builder = CreateVectorBucketRequest
         .builder()
@@ -321,7 +315,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     });
   }
 
-  private Completable createIndex() {
+  Completable createIndex() {
     return Completable.defer(() -> {
       CreateIndexRequest req = CreateIndexRequest
         .builder()
@@ -340,14 +334,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     });
   }
 
-  private float normalizeScore(float score) {
-    return switch (properties.similarity()) {
-      case EUCLIDEAN -> 2 / (2 + score);
-      case COSINE, DOT -> (2 - score) / 2;
-    };
-  }
-
-  private static Object extractValue(Document v) {
+  static Object extractValue(Document v) {
     if (v.isBoolean()) {
       return v.asBoolean();
     } else if (v.isNumber()) {
@@ -363,7 +350,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     }
   }
 
-  private void logReadOnly(String operation) {
+  void logReadOnly(String operation) {
     log.warn(
       "Resource is read-only. Skipping {} operation for bucket {} and index {}.",
       operation,
@@ -372,7 +359,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     );
   }
 
-  private void logNotActivated(String operation) {
+  void logNotActivated(String operation) {
     log.warn(
       "Resource not activated. Skipping {} operation for bucket {} and index {}.",
       operation,
@@ -381,13 +368,13 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     );
   }
 
-  private List<Float> toFloatList(float[] arr) {
+  List<Float> toFloatList(float[] arr) {
     List<Float> list = new ArrayList<>(arr.length);
     for (float v : arr) list.add(v);
     return list;
   }
 
-  private static Throwable unwrapCompletion(Throwable t) {
+  static Throwable unwrapCompletion(Throwable t) {
     if (t instanceof java.util.concurrent.CompletionException ce && ce.getCause() != null) return ce.getCause();
     if (t instanceof java.util.concurrent.ExecutionException ee && ee.getCause() != null) return ee.getCause();
     return t;
