@@ -19,6 +19,7 @@ import io.gravitee.resource.ai.vector.store.api.*;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3VectorsConfiguration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AiVectorStoreAWSS3Configuration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.EncryptionType;
+import io.gravitee.resource.ai.vector.store.aws.s3.wrapper.FloatArrayList;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
@@ -116,7 +117,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
     return Completable
       .defer(() -> {
-        List<Float> vectorList = toFloatList(vectorEntity.vector());
+        List<Float> vectorList = FloatArrayList.of(vectorEntity.vector());
         VectorData vectorData = VectorData.fromFloat32(vectorList);
         Map<String, Document> metadata = new java.util.HashMap<>();
         if (properties.allowEviction()) {
@@ -157,17 +158,29 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     }
     return Flowable
       .defer(() -> {
-        List<Float> vectorList = toFloatList(queryEntity.vector());
-        QueryVectorsRequest req = QueryVectorsRequest
+        List<Float> vectorList = FloatArrayList.of(queryEntity.vector());
+        QueryVectorsRequest.Builder reqBuilder = QueryVectorsRequest
           .builder()
           .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
           .indexName(awsS3VectorsConfig.vectorIndexName())
           .queryVector(VectorData.fromFloat32(vectorList))
           .topK(properties.maxResults())
           .returnDistance(true)
-          .returnMetadata(true)
-          .build();
+          .returnMetadata(true);
 
+        // Add metadata filter if retrieval_context_key exists
+        if (queryEntity.metadata() != null && queryEntity.metadata().containsKey(RETRIEVAL_CONTEXT_KEY_ATTR)) {
+          Object contextValue = queryEntity.metadata().get(RETRIEVAL_CONTEXT_KEY_ATTR);
+          if (contextValue != null) {
+            // S3 Vectors expects filter as a Document
+            Map<String, Document> filterMap = Map.of(
+              RETRIEVAL_CONTEXT_KEY_ATTR,
+              Document.fromString(contextValue.toString())
+            );
+            reqBuilder.filter(Document.fromMap(filterMap));
+          }
+        }
+        QueryVectorsRequest req = reqBuilder.build();
         var fut = s3VectorsClient.queryVectors(req);
         return Single
           .fromCompletionStage(fut)
@@ -205,12 +218,13 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       logReadOnly(REMOVE_OPERATION);
       return;
     }
-    DeleteVectorsRequest deleteRequest = DeleteVectorsRequest
+    DeleteVectorsRequest.Builder deleteBuilder = DeleteVectorsRequest
       .builder()
       .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
       .indexName(awsS3VectorsConfig.vectorIndexName())
-      .keys(vectorEntity.id())
-      .build();
+      .keys(vectorEntity.id());
+
+    DeleteVectorsRequest deleteRequest = deleteBuilder.build();
 
     var fut = s3VectorsClient.deleteVectors(deleteRequest);
     fut.whenComplete((resp, err) -> {
@@ -366,12 +380,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       awsS3VectorsConfig.vectorBucketName(),
       awsS3VectorsConfig.vectorIndexName()
     );
-  }
-
-  List<Float> toFloatList(float[] arr) {
-    List<Float> list = new ArrayList<>(arr.length);
-    for (float v : arr) list.add(v);
-    return list;
   }
 
   static Throwable unwrapCompletion(Throwable t) {
