@@ -72,23 +72,29 @@ To use this resource, register it with the following configuration:
 
 ---
 
+## 🧑‍💼 Multi-Tenant Isolation via Metadata
+
+To enable multi-tenant isolation, include a unique context key (e.g., `retrieval_context_key`) in the metadata of each vector when adding. Queries and deletions can be filtered using this metadata key as needed.
+
+---
+
 ## 🧠 Example Usage Pattern
 
-1. **Create a vector bucket and index** via AWS Console, CLI, or SDK. Set dimensions, distance metric, and non-filterable metadata keys (these are immutable).
-2. **Insert vectors** using the PutVectors API (max 500 vectors per call). Each vector has a unique key, float32 embedding matching `dimensions`, and metadata.
+1. **Create a vector bucket and index** via AWS Console, CLI, or SDK. Set dimensions, distance metric, and (optionally) a filterable metadata key for tenant isolation.
+2. **Insert vectors** using the PutVectors API (max 500 vectors per call). Each vector has a unique key, float32 embedding matching `dimensions`, and metadata. Include a context key in metadata for multi-tenant isolation if desired.
 3. **Query vectors** using QueryVectors API, optionally filtering on filterable metadata keys, and returning similarity/distance scores and metadata if requested.
-4. **Metadata filtering** only applies to keys marked filterable at index creation.
+4. **Delete vectors** using DeleteVectors API, optionally filtering by metadata key.
 
 ---
 
 ## ✅ Features
-
 - Fully managed, no infrastructure to run or patch
 - Scales to millions/billions of vectors and thousands of indexes
 - Low-cost, up to 90% cheaper than dedicated vector DBs
 - Strong read-after-write consistency
-- Fine-grained metadata filtering and IAM-based access control
+- Fine-grained IAM-based access control
 - Seamless integration with Bedrock Knowledge Bases and OpenSearch
+- Multi-tenant isolation via metadata keys
 
 ---
 
@@ -105,14 +111,13 @@ To use this resource, register it with the following configuration:
 - Retrieval-Augmented Generation (RAG) with Amazon Bedrock
 - Semantic search over large document/media sets
 - Agent memory/context vector storage
-- Multi-tenant indexing (separate buckets or index prefixes)
+- Multi-tenant indexing (separate buckets, index prefixes, or via metadata keys)
 
 ---
 
 ## 📌 Summary
 
-This **S3‑Tensors (Amazon S3 Vectors)** resource delivers a fully managed, scalable, cost-efficient vector store on S3. It is ideal for production-grade RAG and semantic search pipelines, with strong AWS-native integration and metadata support.
-
+This **S3‑Tensors (Amazon S3 Vectors)** resource delivers a fully managed, scalable, cost-efficient vector store on S3. It is ideal for production-grade RAG and semantic search pipelines, with strong AWS-native integration, and multi-tenant isolation.
 ---
 
 ## 🚀 Example SDK Usage (Java + RxJava Maybe + AWS SDK v2)
