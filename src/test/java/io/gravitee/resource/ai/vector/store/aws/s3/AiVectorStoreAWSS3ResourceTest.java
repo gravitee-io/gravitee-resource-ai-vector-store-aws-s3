@@ -95,7 +95,13 @@ class AiVectorStoreAWSS3ResourceTest {
   @Test
   void testAddReturnsCompletableWhenActivated() {
     resource.activated.set(true);
-    VectorEntity entity = new VectorEntity("text", new float[] { 1f, 2f, 3f }, Map.of());
+    VectorEntity entity = new VectorEntity(
+      "vec-test-activated",
+      null,
+      new float[] { 1f, 2f, 3f },
+      Map.of(),
+      System.currentTimeMillis()
+    );
     PutVectorsResponse resp = mock(PutVectorsResponse.class);
     CompletableFuture<PutVectorsResponse> fut = CompletableFuture.completedFuture(resp);
     when(mockClient.putVectors(any(PutVectorsRequest.class))).thenReturn(fut);
@@ -176,7 +182,7 @@ class AiVectorStoreAWSS3ResourceTest {
     resource.awsS3VectorsConfig = s3Config;
     Map<String, Object> metadata = new HashMap<>();
     metadata.put("retrieval_context_key", "tenant-xyz");
-    VectorEntity entity = new VectorEntity("id", new float[] { 1f, 2f, 3f }, metadata);
+    VectorEntity entity = new VectorEntity("id", null, new float[] { 1f, 2f, 3f }, metadata, System.currentTimeMillis());
     PutVectorsResponse resp = mock(PutVectorsResponse.class);
     CompletableFuture<PutVectorsResponse> fut = CompletableFuture.completedFuture(resp);
     ArgumentCaptor<PutVectorsRequest> captor = ArgumentCaptor.forClass(PutVectorsRequest.class);
