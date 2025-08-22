@@ -25,7 +25,6 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -113,6 +112,9 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     if (properties.readOnly()) {
       logReadOnly(ADD_OPERATION);
       return Completable.complete();
+    }
+    if (vectorEntity.id() == null || vectorEntity.id().isBlank()) {
+      return Completable.error(new IllegalArgumentException("VectorEntity.id must not be null or blank"));
     }
 
     return Completable
