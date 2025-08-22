@@ -338,7 +338,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         .vectorBucketName(awsS3VectorsConfig.vectorBucketName())
         .indexName(awsS3VectorsConfig.vectorIndexName())
         .dimension(properties.embeddingSize())
-        .distanceMetric(properties.similarity().name())
+        .distanceMetric(properties.similarity().name().toLowerCase())
         .build();
 
       var fut = s3VectorsClient.createIndex(req);
