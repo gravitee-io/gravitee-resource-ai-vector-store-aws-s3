@@ -32,7 +32,6 @@ import software.amazon.awssdk.services.s3vectors.S3VectorsAsyncClient;
 public class AiVectorStoreAWSS3ResourceIT {
 
   private AiVectorStoreAWSS3Resource resource;
-  private AWSS3VectorsConfiguration s3Config;
   private AiVectorStoreProperties properties;
   private final String bucketName = "gravitee-it-bucket";
   private final String indexName = "gravitee-it-index";
@@ -45,17 +44,16 @@ public class AiVectorStoreAWSS3ResourceIT {
   void cleanIndexAndBucket() {
     // Reinitialize properties and resource for each test to avoid state leakage
     properties = new AiVectorStoreProperties(8, 5, Similarity.COSINE, 0.5f, null, false, true, 1, TimeUnit.HOURS);
-    s3Config =
-      new AWSS3VectorsConfiguration(
-        bucketName,
-        indexName,
-        EncryptionType.NONE,
-        null,
-        region,
-        accessKey,
-        secretKey,
-        sessionToken
-      );
+    AWSS3VectorsConfiguration s3Config = new AWSS3VectorsConfiguration(
+      bucketName,
+      indexName,
+      EncryptionType.NONE,
+      null,
+      region,
+      accessKey,
+      secretKey,
+      sessionToken
+    );
     resource = new AiVectorStoreAWSS3Resource();
     resource.s3VectorsClient =
       S3VectorsAsyncClient
