@@ -50,7 +50,7 @@ class AiVectorStoreAWSS3ResourceTest {
     config = new AiVectorStoreAWSS3Configuration(properties, s3Config);
     resource = spy(new AiVectorStoreAWSS3Resource());
     resource.properties = properties;
-    resource.awsS3VectorsConfig = s3Config;
+    resource.awsS3VectorsConfiguration = s3Config;
     doReturn(config).when(resource).configuration();
     resource.s3VectorsClient = mockClient;
     // Mock putVectors, queryVectors, deleteVectors for both overloads
@@ -114,7 +114,7 @@ class AiVectorStoreAWSS3ResourceTest {
   void testAddReturnsCompleteIfNotActivated() {
     resource.activated.set(false);
     resource.properties = properties;
-    resource.awsS3VectorsConfig = s3Config;
+    resource.awsS3VectorsConfiguration = s3Config;
     VectorEntity entity = new VectorEntity("text", new float[] { 1f, 2f, 3f }, Map.of());
     Completable result = resource.add(entity);
     TestObserver<Void> observer = result.test();
@@ -125,7 +125,7 @@ class AiVectorStoreAWSS3ResourceTest {
   void testFindRelevantReturnsFlowable() {
     resource.activated.set(true);
     resource.properties = properties;
-    resource.awsS3VectorsConfig = s3Config;
+    resource.awsS3VectorsConfiguration = s3Config;
     VectorEntity query = new VectorEntity("id", new float[] { 1f, 2f, 3f }, Map.of());
     QueryVectorsResponse response = mock(QueryVectorsResponse.class);
     QueryOutputVector output = mock(QueryOutputVector.class);
@@ -145,7 +145,7 @@ class AiVectorStoreAWSS3ResourceTest {
   void testFindRelevantReturnsEmptyIfNotActivated() {
     resource.activated.set(false);
     resource.properties = properties;
-    resource.awsS3VectorsConfig = s3Config;
+    resource.awsS3VectorsConfiguration = s3Config;
     VectorEntity query = new VectorEntity("id", new float[] { 1f, 2f, 3f }, Map.of());
     Flowable<VectorResult> flow = resource.findRelevant(query);
     List<VectorResult> results = flow.toList().blockingGet();
@@ -156,7 +156,7 @@ class AiVectorStoreAWSS3ResourceTest {
   void testRemoveCallsDeleteVectors() {
     resource.activated.set(true);
     resource.properties = properties;
-    resource.awsS3VectorsConfig = s3Config;
+    resource.awsS3VectorsConfiguration = s3Config;
     VectorEntity entity = new VectorEntity("id", new float[] { 1f, 2f, 3f }, Map.of());
     DeleteVectorsResponse resp = mock(DeleteVectorsResponse.class);
     CompletableFuture<DeleteVectorsResponse> fut = CompletableFuture.completedFuture(resp);
@@ -169,7 +169,7 @@ class AiVectorStoreAWSS3ResourceTest {
   void testRemoveDoesNothingIfNotActivated() {
     resource.activated.set(false);
     resource.properties = properties;
-    resource.awsS3VectorsConfig = s3Config;
+    resource.awsS3VectorsConfiguration = s3Config;
     VectorEntity entity = new VectorEntity("id", new float[] { 1f, 2f, 3f }, Map.of());
     resource.remove(entity);
     verify(mockClient, never()).deleteVectors(any(DeleteVectorsRequest.class));
@@ -179,7 +179,7 @@ class AiVectorStoreAWSS3ResourceTest {
   void testAddIncludesRetrievalContextKeyIfPresent() {
     resource.activated.set(true);
     resource.properties = properties;
-    resource.awsS3VectorsConfig = s3Config;
+    resource.awsS3VectorsConfiguration = s3Config;
     Map<String, Object> metadata = new HashMap<>();
     metadata.put("retrieval_context_key", "tenant-xyz");
     VectorEntity entity = new VectorEntity("id", null, new float[] { 1f, 2f, 3f }, metadata, System.currentTimeMillis());

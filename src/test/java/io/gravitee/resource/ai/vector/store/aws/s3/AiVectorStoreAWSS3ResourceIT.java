@@ -66,7 +66,7 @@ public class AiVectorStoreAWSS3ResourceIT {
         )
         .build();
     resource.properties = properties;
-    resource.awsS3VectorsConfig = s3Config;
+    resource.awsS3VectorsConfiguration = s3Config;
     System.out.println("[TEST SETUP] Cleaning index and bucket before test: " + this.getClass().getSimpleName());
     // Delete index if exists
     try {
@@ -186,7 +186,7 @@ public class AiVectorStoreAWSS3ResourceIT {
         .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)))
         .build();
     resourceNoSession.properties = properties;
-    resourceNoSession.awsS3VectorsConfig = configNoSession;
+    resourceNoSession.awsS3VectorsConfiguration = configNoSession;
     assertDoesNotThrow(() -> resourceNoSession.ensureBucketAndIndex().blockingAwait());
   }
 
