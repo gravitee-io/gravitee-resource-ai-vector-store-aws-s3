@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import io.gravitee.resource.ai.vector.store.api.*;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.*;
-import io.reactivex.rxjava3.core.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.*;
@@ -37,40 +36,10 @@ public class AiVectorStoreAWSS3ResourceIT {
   private AiVectorStoreProperties properties;
   private final String bucketName = "gravitee-it-bucket";
   private final String indexName = "gravitee-it-index";
-  private final String region = "us-east-1";
+  private final String region = "us-east-2";
   private final String accessKey = System.getenv("AWS_ACCESS_KEY_ID");
   private final String secretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
   private final String sessionToken = System.getenv("AWS_SESSION_TOKEN");
-
-  @BeforeAll
-  void setup() {
-    properties = new AiVectorStoreProperties(8, 5, Similarity.COSINE, 0.5f, null, false, true, 1, TimeUnit.HOURS);
-    s3Config =
-      new AWSS3VectorsConfiguration(
-        bucketName,
-        indexName,
-        EncryptionType.NONE,
-        null,
-        region,
-        accessKey,
-        secretKey,
-        sessionToken
-      );
-    AiVectorStoreAWSS3Configuration config = new AiVectorStoreAWSS3Configuration(properties, s3Config);
-    resource = new AiVectorStoreAWSS3Resource();
-    resource.s3VectorsClient =
-      S3VectorsAsyncClient
-        .builder()
-        .region(Region.of(region))
-        .credentialsProvider(
-          sessionToken != null && !sessionToken.isEmpty()
-            ? StaticCredentialsProvider.create(AwsSessionCredentials.create(accessKey, secretKey, sessionToken))
-            : StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey))
-        )
-        .build();
-    resource.properties = properties;
-    resource.awsS3VectorsConfig = s3Config;
-  }
 
   @BeforeEach
   void cleanIndexAndBucket() {
@@ -105,21 +74,19 @@ public class AiVectorStoreAWSS3ResourceIT {
     try {
       resource.s3VectorsClient.deleteIndex(b -> b.vectorBucketName(bucketName).indexName(indexName)).join();
     } catch (Exception ignored) {}
-    // Delete bucket if exists
+    // Recreate bucket and index for each test
+    assertDoesNotThrow(() -> resource.ensureBucketAndIndex().blockingAwait());
+  }
+
+  @AfterAll
+  void removeBucketAndIndex() {
+    System.out.println("[TEST CLEANUP] Removing bucket post test execution");
+    try {
+      resource.s3VectorsClient.deleteIndex(b -> b.vectorBucketName(bucketName).indexName(indexName)).join();
+    } catch (Exception ignored) {}
     try {
       resource.s3VectorsClient.deleteVectorBucket(b -> b.vectorBucketName(bucketName)).join();
     } catch (Exception ignored) {}
-    // Recreate bucket and index for each test
-    assertDoesNotThrow(() -> resource.ensureBucketAndIndex().blockingAwait());
-    // Extra verification: ensure index is empty
-    try {
-      var response = resource.s3VectorsClient
-        .queryVectors(b -> b.vectorBucketName(bucketName).indexName(indexName).topK(1))
-        .get();
-      assertTrue(response.vectors().isEmpty(), "Index is not empty after cleanup");
-    } catch (Exception e) {
-      // If index doesn't exist, that's fine
-    }
   }
 
   @Test
@@ -169,6 +136,27 @@ public class AiVectorStoreAWSS3ResourceIT {
     assertTrue(results.getFirst().entity().metadata().containsKey("expireAt"));
   }
 
+  /**
+   * Polls for up to maxWaitMillis, checking every pollIntervalMillis, until the vector is no longer found.
+   * Fails the test if the vector is still present after the timeout.
+   */
+  private void waitUntilVectorRemoved(VectorEntity entity, int maxWaitMillis, int pollIntervalMillis) {
+    long start = System.currentTimeMillis();
+    while (System.currentTimeMillis() - start < maxWaitMillis) {
+      List<VectorResult> results = resource.findRelevant(entity).toList().blockingGet();
+      if (results.isEmpty()) {
+        return;
+      }
+      try {
+        Thread.sleep(pollIntervalMillis);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        fail("Test interrupted while waiting for vector removal");
+      }
+    }
+    fail("Vector was not removed after " + maxWaitMillis + "ms");
+  }
+
   @Test
   void testRemoveVector() {
     resource.activated.set(true);
@@ -177,10 +165,7 @@ public class AiVectorStoreAWSS3ResourceIT {
     VectorEntity entity = new VectorEntity(id, null, vector, Map.of(), System.currentTimeMillis());
     assertDoesNotThrow(() -> resource.add(entity).blockingAwait());
     assertDoesNotThrow(() -> resource.remove(entity));
-    // After removal, search should not return the vector
-    VectorEntity query = new VectorEntity("query", vector, Map.of());
-    List<VectorResult> results = resource.findRelevant(query).toList().blockingGet();
-    // May still return if S3 Vectors is eventually consistent, but should be empty after some time
+    waitUntilVectorRemoved(entity, 2000, 100);
   }
 
   @Test
@@ -301,16 +286,41 @@ public class AiVectorStoreAWSS3ResourceIT {
   }
 
   @Test
-  void testReadOnlyMode() {
+  void testAddDoesNotPersistInReadOnlyMode() {
     resource.activated.set(true);
     resource.properties = new AiVectorStoreProperties(8, 5, Similarity.COSINE, 0.5f, null, true, true, 1, TimeUnit.HOURS);
     String id = "vec-readonly";
     float[] vector = new float[] { 1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f };
     VectorEntity entity = new VectorEntity(id, null, vector, Map.of(), System.currentTimeMillis());
-    // Should not throw, but not actually add
     assertDoesNotThrow(() -> resource.add(entity).blockingAwait());
-    // Should not throw on remove
+    // Should not be found after add in read-only mode
+    VectorEntity query = new VectorEntity(id, null, vector, Map.of(), System.currentTimeMillis());
+    List<VectorResult> results = resource.findRelevant(query).toList().blockingGet();
+    assertTrue(results.isEmpty(), "Vector should not be persisted in read-only mode");
+  }
+
+  @Test
+  void testRemoveDoesNotAffectStoreInReadOnlyMode() {
+    resource.activated.set(true);
+    resource.properties = new AiVectorStoreProperties(8, 5, Similarity.COSINE, 0.5f, null, false, true, 1, TimeUnit.HOURS);
+    String id = "vec-readonly-remove";
+    float[] vector = new float[] { 0f, 1f, 0f, 0f, 0f, 0f, 0f, 0f };
+    VectorEntity entity = new VectorEntity(id, null, vector, Map.of(), System.currentTimeMillis());
+    assertDoesNotThrow(() -> resource.add(entity).blockingAwait());
+    // Confirm it's present
+    VectorEntity query = new VectorEntity(id, null, vector, Map.of(), System.currentTimeMillis());
+    List<VectorResult> resultsBefore = resource.findRelevant(query).toList().blockingGet();
+    assertFalse(resultsBefore.isEmpty(), "Vector should be present before switching to read-only");
+    // Switch to read-only and try to remove
+    resource.properties = new AiVectorStoreProperties(8, 5, Similarity.COSINE, 0.5f, null, true, true, 1, TimeUnit.HOURS);
     assertDoesNotThrow(() -> resource.remove(entity));
+    // Should still be present
+    List<VectorResult> resultsAfter = resource.findRelevant(query).toList().blockingGet();
+    assertFalse(resultsAfter.isEmpty(), "Vector should still be present after remove in read-only mode");
+    // Switch back to readOnly: false and remove for real
+    resource.properties = new AiVectorStoreProperties(8, 5, Similarity.COSINE, 0.5f, null, false, true, 1, TimeUnit.HOURS);
+    assertDoesNotThrow(() -> resource.remove(entity));
+    waitUntilVectorRemoved(query, 2000, 100);
   }
 
   @Test
