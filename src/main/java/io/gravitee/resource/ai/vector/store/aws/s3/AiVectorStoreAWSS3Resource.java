@@ -15,12 +15,12 @@
  */
 package io.gravitee.resource.ai.vector.store.aws.s3;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.gravitee.resource.ai.vector.store.api.*;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3VectorsConfiguration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AiVectorStoreAWSS3Configuration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.EncryptionType;
+import io.gravitee.resource.ai.vector.store.aws.s3.conversions.S3VectorsMetadataCodec;
 import io.gravitee.resource.ai.vector.store.aws.s3.wrapper.FloatArrayList;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
@@ -32,13 +32,11 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.core.document.Document;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3vectors.S3VectorsAsyncClient;
 import software.amazon.awssdk.services.s3vectors.model.*;
@@ -50,7 +48,6 @@ import software.amazon.awssdk.services.s3vectors.model.*;
 @Slf4j
 public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorStoreAWSS3Configuration> {
 
-  public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
   AWSS3VectorsConfiguration awsS3VectorsConfiguration;
   AiVectorStoreProperties properties;
   S3VectorsAsyncClient s3VectorsClient;
@@ -66,6 +63,8 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   private static final String ADD_OPERATION = "add";
   private static final String REMOVE_OPERATION = "remove";
   private static final String INITIALIZATION_OPERATION = "initialization";
+
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   @Override
   public void doStart() throws Exception {
@@ -125,29 +124,22 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       .defer(() -> {
         List<Float> vectorList = FloatArrayList.of(vectorEntity.vector());
         VectorData vectorData = VectorData.fromFloat32(vectorList);
-        Map<String, Document> metadata = new java.util.HashMap<>();
+        Map<String, Object> metadata = new java.util.HashMap<>();
 
         if (vectorEntity.metadata() != null) {
-          metadata =
-            vectorEntity
-              .metadata()
-              .entrySet()
-              .stream()
-              .filter(e -> e.getKey() != null && !e.getKey().isBlank() && e.getValue() != null)
-              .map(e -> Map.entry(e.getKey(), extractDocumentValue(e.getValue())))
-              .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+          metadata.putAll(vectorEntity.metadata());
         }
         if (properties.allowEviction()) {
           long evictTime = properties.evictTime();
           TimeUnit evictTimeUnit = properties.evictTimeUnit();
           Instant expireAt = Instant.now().plus(evictTime, evictTimeUnit.toChronoUnit());
-          metadata.put(EXPIRE_AT_ATTR, Document.fromString(expireAt.toString()));
+          metadata.put(EXPIRE_AT_ATTR, expireAt.toString());
         }
         PutInputVector putVector = PutInputVector
           .builder()
           .key(vectorEntity.id())
           .data(vectorData)
-          .metadata(Document.fromMap(metadata))
+          .metadata(S3VectorsMetadataCodec.toS3Metadata(metadata, false))
           .build();
         PutVectorsRequest putRequest = PutVectorsRequest
           .builder()
@@ -183,17 +175,13 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         if (queryEntity.metadata() != null && queryEntity.metadata().containsKey(RETRIEVAL_CONTEXT_KEY_ATTR)) {
           Object contextValue = queryEntity.metadata().get(RETRIEVAL_CONTEXT_KEY_ATTR);
           if (contextValue != null) {
-            // S3 Vectors expects filter as a Document
-            Map<String, Document> filterMap = Map.of(
-              RETRIEVAL_CONTEXT_KEY_ATTR,
-              Document.fromString(contextValue.toString())
-            );
-            reqBuilder.filter(Document.fromMap(filterMap));
+            Map<String, Object> filterMap = Map.of(RETRIEVAL_CONTEXT_KEY_ATTR, contextValue.toString());
+            reqBuilder.filter(S3VectorsMetadataCodec.toS3Metadata(filterMap, false));
           }
         }
         QueryVectorsRequest req = reqBuilder.build();
         var fut = s3VectorsClient.queryVectors(req);
-        return Single
+        var ret = Single
           .fromCompletionStage(fut)
           .doOnDispose(() -> fut.cancel(true))
           .flattenAsFlowable(QueryVectorsResponse::vectors)
@@ -201,13 +189,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
             Map<String, Object> metadata = new java.util.HashMap<>();
             var resultMetadata = result.metadata();
             if (resultMetadata != null && resultMetadata.isMap()) {
-              metadata =
-                resultMetadata
-                  .asMap()
-                  .entrySet()
-                  .stream()
-                  .map(e -> Map.entry(e.getKey(), extractValue(e.getValue())))
-                  .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+              metadata = S3VectorsMetadataCodec.fromS3Metadata(resultMetadata);
             }
             String text = (String) metadata.remove(TEXT_ATTR);
             metadata.remove(VECTOR_ATTR);
@@ -215,6 +197,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
             return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
           })
           .filter(vr -> vr.score() >= properties.threshold());
+        return ret;
       })
       .sorted((a, b) -> Float.compare(b.score(), a.score()));
   }
@@ -360,62 +343,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         .doOnComplete(() -> log.debug("Index created: {}", awsS3VectorsConfiguration.vectorIndexName()))
         .doOnError(err -> log.warn("Index may already exist or could not be created: {}", err.getMessage(), err));
     });
-  }
-
-  static Object extractValue(Document v) {
-    if (v.isBoolean()) {
-      return v.asBoolean();
-    } else if (v.isNumber()) {
-      return v.asNumber();
-    } else if (v.isString()) {
-      String vString = v.asString();
-
-      if (vString.startsWith("{") && vString.endsWith("}")) {
-        try {
-          return OBJECT_MAPPER.readValue(v.asString(), Map.class);
-        } catch (JsonProcessingException e) {
-          log.debug("Could not parse string as JSON, returning raw string");
-        }
-      }
-      return vString;
-    } else if (v.isMap()) {
-      return v.asMap().entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> extractValue(e.getValue())));
-    } else if (v.isList()) {
-      return v.asList().stream().map(AiVectorStoreAWSS3Resource::extractValue).collect(Collectors.toList());
-    } else {
-      return v.asString();
-    }
-  }
-
-  @SneakyThrows
-  static Document extractDocumentValue(Object v) {
-    if (v instanceof Boolean b) {
-      return Document.fromBoolean(b);
-    } else if (v instanceof Number n) {
-      switch (n) {
-        case Integer i -> {
-          return Document.fromNumber(i);
-        }
-        case Long l -> {
-          return Document.fromNumber(l);
-        }
-        case Double aDouble -> {
-          return Document.fromNumber(aDouble);
-        }
-        case Float aFloat -> {
-          return Document.fromNumber(aFloat);
-        }
-        default -> {
-          return Document.fromNumber(n.shortValue());
-        }
-      }
-    } else if (v instanceof List<?> l) {
-      List<Document> docList = l.stream().map(AiVectorStoreAWSS3Resource::extractDocumentValue).collect(Collectors.toList());
-      return Document.fromList(docList);
-    } else if (v instanceof Map<?, ?> m) {
-      return Document.fromString(OBJECT_MAPPER.writeValueAsString(m));
-    }
-    return Document.fromString(v.toString());
   }
 
   void logReadOnly(String operation) {

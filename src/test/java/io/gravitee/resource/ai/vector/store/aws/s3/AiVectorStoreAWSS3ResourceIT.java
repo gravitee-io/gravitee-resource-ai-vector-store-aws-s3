@@ -356,4 +356,72 @@ public class AiVectorStoreAWSS3ResourceIT {
     // Adding duplicate key should not throw, but may overwrite
     assertDoesNotThrow(() -> resource.add(entity2).blockingAwait());
   }
+
+  @Test
+  void testAddAndRetrieveComplexMetadata() {
+    resource.activated.set(true);
+    String id = "vec-complex-meta";
+    float[] vector = new float[] { 1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f };
+    Map<String, Object> metadata = new HashMap<>();
+    metadata.put("status", 200);
+    metadata.put(
+      "headers",
+      Map.of(
+        "Content-Type",
+        List.of("application/json"),
+        "X-Foo",
+        List.of("bar", "baz"),
+        "X-Nested",
+        List.of(Map.of("inner", 123, "flag", true))
+      )
+    );
+    metadata.put("tags", List.of("api", "test", 123, Map.of("deep", List.of("a", "b"))));
+    metadata.put("info", Map.of("version", 1.2, "active", true, "details", Map.of("owner", "gravitee")));
+
+    VectorEntity entity = new VectorEntity(id, null, vector, metadata, System.currentTimeMillis());
+    assertDoesNotThrow(() -> resource.add(entity).blockingAwait());
+
+    // Query for the vector
+    VectorEntity query = new VectorEntity(id, null, vector, Map.of(), System.currentTimeMillis());
+    List<VectorResult> results = resource.findRelevant(query).toList().blockingGet();
+    assertFalse(results.isEmpty());
+    Map<String, Object> returnedMeta = results.getFirst().entity().metadata();
+
+    // Check status
+    assertEquals(200, returnedMeta.get("status"));
+    // Check headers
+    Object headersObj = returnedMeta.get("headers");
+    assertTrue(headersObj instanceof Map);
+    Map<?, ?> headersMap = (Map<?, ?>) headersObj;
+    assertEquals(List.of("application/json"), headersMap.get("Content-Type"));
+    assertEquals(List.of("bar", "baz"), headersMap.get("X-Foo"));
+    Object nestedHeader = headersMap.get("X-Nested");
+    assertTrue(nestedHeader instanceof List);
+    List<?> nestedHeaderList = (List<?>) nestedHeader;
+    assertTrue(nestedHeaderList.getFirst() instanceof Map);
+    Map<?, ?> innerMap = (Map<?, ?>) nestedHeaderList.getFirst();
+    assertEquals(123, innerMap.get("inner"));
+    assertEquals(true, innerMap.get("flag"));
+    // Check tags
+    Object tagsObj = returnedMeta.get("tags");
+    assertTrue(tagsObj instanceof List);
+    List<?> tagsList = (List<?>) tagsObj;
+    assertEquals("api", tagsList.get(0));
+    assertEquals("test", tagsList.get(1));
+    assertEquals(123, tagsList.get(2));
+    Object deepTag = tagsList.get(3);
+    assertTrue(deepTag instanceof Map);
+    Map<?, ?> deepTagMap = (Map<?, ?>) deepTag;
+    assertTrue(deepTagMap.containsKey("deep"));
+    assertEquals(List.of("a", "b"), deepTagMap.get("deep"));
+    // Check info
+    Object infoObj = returnedMeta.get("info");
+    assertTrue(infoObj instanceof Map);
+    Map<?, ?> infoMap = (Map<?, ?>) infoObj;
+    assertEquals(1.2, ((Number) infoMap.get("version")).doubleValue(), 0.00001);
+    assertEquals(true, infoMap.get("active"));
+    assertTrue(infoMap.containsKey("details"));
+    Map<?, ?> detailsMap = (Map<?, ?>) infoMap.get("details");
+    assertEquals("gravitee", detailsMap.get("owner"));
+  }
 }
