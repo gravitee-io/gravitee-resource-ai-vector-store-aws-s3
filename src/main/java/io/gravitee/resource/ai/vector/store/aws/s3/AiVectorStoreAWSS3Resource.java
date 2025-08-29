@@ -15,7 +15,6 @@
  */
 package io.gravitee.resource.ai.vector.store.aws.s3;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.gravitee.resource.ai.vector.store.api.*;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AWSS3VectorsConfiguration;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.AiVectorStoreAWSS3Configuration;
@@ -31,7 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -63,8 +61,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
   private static final String ADD_OPERATION = "add";
   private static final String REMOVE_OPERATION = "remove";
   private static final String INITIALIZATION_OPERATION = "initialization";
-
-  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   @Override
   public void doStart() throws Exception {
@@ -135,6 +131,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
           Instant expireAt = Instant.now().plus(evictTime, evictTimeUnit.toChronoUnit());
           metadata.put(EXPIRE_AT_ATTR, expireAt.toString());
         }
+        metadata.put(TEXT_ATTR, vectorEntity.text());
         PutInputVector putVector = PutInputVector
           .builder()
           .key(vectorEntity.id())
@@ -181,7 +178,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         }
         QueryVectorsRequest req = reqBuilder.build();
         var fut = s3VectorsClient.queryVectors(req);
-        var ret = Single
+        return Single
           .fromCompletionStage(fut)
           .doOnDispose(() -> fut.cancel(true))
           .flattenAsFlowable(QueryVectorsResponse::vectors)
@@ -197,7 +194,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
             return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
           })
           .filter(vr -> vr.score() >= properties.threshold());
-        return ret;
       })
       .sorted((a, b) -> Float.compare(b.score(), a.score()));
   }
