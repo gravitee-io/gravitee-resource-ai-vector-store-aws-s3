@@ -20,6 +20,7 @@ import static org.mockito.Mockito.*;
 
 import io.gravitee.resource.ai.vector.store.api.*;
 import io.gravitee.resource.ai.vector.store.aws.s3.configuration.*;
+import io.gravitee.resource.ai.vector.store.aws.s3.conversions.S3VectorsMetadataCodec;
 import io.reactivex.rxjava3.core.*;
 import io.reactivex.rxjava3.observers.TestObserver;
 import java.util.*;
@@ -194,5 +195,71 @@ class AiVectorStoreAWSS3ResourceTest {
     Document doc = putVector.metadata();
     assertTrue(doc.isMap());
     assertEquals("tenant-xyz", doc.asMap().get("retrieval_context_key").asString());
+  }
+
+  @Test
+  void testMetadataRoundTripConversion() {
+    // Complex metadata example
+    Map<String, Object> metadata = new HashMap<>();
+    metadata.put("status", 200);
+    metadata.put("success", true);
+    metadata.put("message", "OK");
+    metadata.put("headers", Map.of("Content-Type", List.of("application/json"), "X-Foo", List.of("bar", "baz")));
+    metadata.put("tags", List.of("api", "test", 123));
+
+    // Convert to Document using codec
+    Document doc = S3VectorsMetadataCodec.toS3Metadata(metadata, false);
+    assertTrue(doc.isMap());
+
+    // Convert back to Map<String, Object> using codec
+    Map<String, Object> resultMap = S3VectorsMetadataCodec.fromS3Metadata(doc);
+
+    // Check primitive values
+    assertEquals(200, resultMap.get("status"));
+    assertEquals(true, resultMap.get("success"));
+    assertEquals("OK", resultMap.get("message"));
+
+    // Check headers
+    Object headersObj = resultMap.get("headers");
+    assertInstanceOf(Map.class, headersObj);
+    Map<?, ?> headersMap = (Map<?, ?>) headersObj;
+    assertEquals(List.of("application/json"), headersMap.get("Content-Type"));
+    assertEquals(List.of("bar", "baz"), headersMap.get("X-Foo"));
+
+    // Check tags
+    Object tagsObj = resultMap.get("tags");
+    assertInstanceOf(List.class, tagsObj);
+    List<?> tagsList = (List<?>) tagsObj;
+    assertEquals(List.of("api", "test", 123), tagsList);
+  }
+
+  @Test
+  void testNumberTypeRoundTripConversion() {
+    Map<String, Object> metadata = new HashMap<>();
+    metadata.put("intVal", 42);
+    metadata.put("longVal", 1234567890123L);
+    metadata.put("doubleVal", 3.14159);
+    metadata.put("floatVal", 2.71828f);
+    metadata.put("shortVal", (short) 7);
+    metadata.put("byteVal", (byte) 8);
+    metadata.put("negInt", -99);
+    metadata.put("bigLong", 2147483648L); // just above Integer.MAX_VALUE
+    metadata.put("negDouble", -0.12345);
+
+    Document doc = S3VectorsMetadataCodec.toS3Metadata(metadata, false);
+    assertTrue(doc.isMap());
+
+    Map<String, Object> resultMap = S3VectorsMetadataCodec.fromS3Metadata(doc);
+
+    assertEquals(42, resultMap.get("intVal"));
+    assertEquals(1234567890123L, resultMap.get("longVal"));
+    assertEquals(3.14159, ((Number) resultMap.get("doubleVal")).doubleValue(), 0.00001);
+    assertEquals(2.71828, ((Number) resultMap.get("floatVal")).doubleValue(), 0.00001);
+    // Shorts and bytes are restored as int
+    assertEquals(7, resultMap.get("shortVal"));
+    assertEquals(8, resultMap.get("byteVal"));
+    assertEquals(-99, resultMap.get("negInt"));
+    assertEquals(2147483648L, resultMap.get("bigLong"));
+    assertEquals(-0.12345, ((Number) resultMap.get("negDouble")).doubleValue(), 0.00001);
   }
 }
