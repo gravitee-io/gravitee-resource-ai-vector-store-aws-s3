@@ -349,7 +349,13 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       return Completable
         .fromCompletionStage(fut)
         .doOnDispose(() -> fut.cancel(true))
-        .doOnComplete(() -> log.info("AWS S3 Vectors Resource Index created: {}", awsS3VectorsConfiguration.vectorIndexName()))
+        .doOnComplete(() ->
+          log.info(
+            "AWS S3 Vectors Resource Index created with {} dimensions: {}",
+            properties.embeddingSize(),
+            awsS3VectorsConfiguration.vectorIndexName()
+          )
+        )
         .doOnError(err -> log.warn("Index may already exist or could not be created: {}", err.getMessage(), err));
     });
   }
