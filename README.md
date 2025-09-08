@@ -17,12 +17,12 @@ To use this resource, register it with the following configuration:
   "enabled": true,
   "configuration": {
     "properties": {
-      "embeddingSize": 1024,
-      "maxResults": 10,
+      "embeddingSize": 384,
+      "maxResults": 5,
       "similarity": "COSINE",
-      "threshold": 0.5,
-      "readOnly": false,
-      "allowEviction": true,
+      "threshold": 0.9,
+      "readOnly": true,
+      "allowEviction": false,
       "evictTime": 1,
       "evictTimeUnit": "HOURS"
     },
@@ -46,31 +46,43 @@ To use this resource, register it with the following configuration:
 
 ### Top-Level Properties
 
-| Field            | Description                                                                            |
-|------------------|----------------------------------------------------------------------------------------|
-| `embeddingSize`  | Size of the input embedding vector. Must match the size used by your model.            |
-| `maxResults`     | Number of top similar vectors to return per query.                                     |
-| `similarity`     | Similarity function: `COSINE` or `EUCLIDEAN`.                                          |
-| `threshold`      | Minimum similarity score to return results.                                            |
-| `readOnly`       | If `true`, disables writes and only performs queries.                                  |
-| `allowEviction`  | If `true`, sets an `expireAt` metadata field on vectors. Eviction is consumer-managed. |
-| `evictTime`      | Time after which vectors are considered expired (for tagging only).                    |
-| `evictTimeUnit`  | Time unit for eviction: `MINUTES`, `HOURS`, or `DAYS`.                                |
+| Field            | Description                                                                                                                                                                                                                 | Required | Default   |
+|------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|-----------|
+| `embeddingSize`  | Dimension of the embedding vectors. This must match the dimensionality used by the model generating embeddings.                                                                                                              | Yes      | 384       |
+| `maxResults`     | Maximum number of results returned in a vector search query.                                                                                                                                                                | Yes      | 5         |
+| `similarity`     | The distance metric used to compare embedding vectors. `COSINE` measures the cosine of the angle between vectors. Best for normalized vectors and when direction matters more than magnitude. `EUCLIDEAN` measures the straight-line distance between vectors. Best when both direction and magnitude are important. | Yes      | COSINE    |
+| `threshold`      | Minimum similarity score for a result to be considered relevant. Set this value higher to filter out less relevant results.                                                                                  | Yes      | 0.9       |
+| `readOnly`       | If true, disables writes and enables read-only access to the index.                                                                                                                 | Yes      | true      |
+| `allowEviction`  | Enable automatic eviction of old or unused entries from the vector store when `readOnly` is false. Only shown if `readOnly` is false.                                               | No       | false     |
+| `evictTime`      | Duration after which an unused vector entry can be evicted. Only shown if `allowEviction` is true.                                                                                  | No       | 1         |
+| `evictTimeUnit`  | Unit of time used to define eviction duration. Defines how long unused vectors are retained. Only shown if `allowEviction` is true.                                                        | No       | HOURS     |
 
 ---
 
 ### AWS S3 Vectors Configuration
 
-| Field                   | Description                                              |
-|-------------------------|----------------------------------------------------------|
-| `vectorBucketName`      | S3 vector bucket name (3–63 lowercase, numbers, hyphens) |
-| `vectorIndexName`       | Index name within the bucket; immutable after creation   |
-| `encryption`            | `"SSE_S3"`, `"SSE_KMS"`, or `"NONE"`                   |
-| `kmsKeyId`              | ARN of the KMS key if using `"SSE_KMS"`                 |
-| `region`                | AWS region where the bucket/index exist                  |
-| `awsAccessKeyId`        | AWS access key ID                                        |
-| `awsSecretAccessKey`    | AWS secret access key                                    |
-| `sessionToken`          | AWS session token (optional)                             |
+| Field                   | Description                                                        | Required | Default   |
+|-------------------------|--------------------------------------------------------------------|----------|-----------|
+| `vectorBucketName`      | S3 vector bucket name (3–63 lowercase, numbers, hyphens).          | Yes      |           |
+| `vectorIndexName`       | Index name within the bucket; immutable after creation.             | Yes      |           |
+| `encryption`            | S3 server-side encryption type. (`SSE_S3`, `SSE_KMS`, or `NONE`)   | Yes      | SSE_S3    |
+| `kmsKeyId`              | ARN of the KMS key if using `SSE_KMS`.                            | No       | null      |
+| `region`                | AWS region where the bucket/index exist.                           | Yes      |           |
+| `awsAccessKeyId`        | AWS access key ID for authentication.                              | Yes      |           |
+| `awsSecretAccessKey`    | AWS secret access key for authentication.                          | Yes      |           |
+| `sessionToken`          | AWS session token (optional).                                      | No       | null      |
+
+---
+
+#### Required Fields
+
+- **Top-Level Properties:** `embeddingSize`, `maxResults`, `similarity`, `threshold`, `readOnly`
+- **AWS S3 Vectors Configuration:** `vectorBucketName`, `vectorIndexName`, `encryption`, `region`, `awsAccessKeyId`, `awsSecretAccessKey`
+
+#### Conditional Display
+
+- `allowEviction` is only shown if `readOnly` is false.
+- `evictTime` and `evictTimeUnit` are only shown if `allowEviction` is true.
 
 ---
 
@@ -139,98 +151,3 @@ To enable multi-tenant isolation, include a unique context key (`retrieval_conte
 ## 📌 Summary
 
 This **S3‑Tensors (Amazon S3 Vectors)** resource delivers a fully managed, scalable, cost-efficient vector store on S3. It is ideal for production-grade RAG and semantic search pipelines, with strong AWS-native integration, and multi-tenant isolation.
-
----
-
-## 🚀 Example SDK Usage (Java + RxJava + AWS SDK v2)
-
-```java
-import software.amazon.awssdk.services.s3vectors.S3VectorsAsyncClient;
-import software.amazon.awssdk.services.s3vectors.model.PutInputVector;
-import software.amazon.awssdk.services.s3vectors.model.PutVectorsRequest;
-import software.amazon.awssdk.services.s3vectors.model.QueryVectorsRequest;
-import software.amazon.awssdk.services.s3vectors.model.QueryOutputVector;
-import io.reactivex.rxjava3.core.Maybe;
-
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-
-public class S3VectorsRxJavaExample {
-
-    private final S3VectorsAsyncClient client;
-    private final String vectorBucketName = "my-vector-bucket";
-    private final String vectorIndexName  = "default-index";
-
-    public S3VectorsRxJavaExample(S3VectorsAsyncClient client) {
-        this.client = client;
-    }
-
-    public Maybe<Void> putVector(PutInputVector vector) {
-        CompletableFuture<Void> fut = client
-            .putVectors(PutVectorsRequest.builder()
-                .vectorBucketName(vectorBucketName)
-                .indexName(vectorIndexName)
-                .vectors(vector)
-                .build())
-            .thenApply(resp -> null);
-        return Maybe.fromFuture(fut);
-    }
-
-    public Maybe<List<QueryOutputVector>> queryNearest(
-        List<Float> embeddingQuery,
-        int topK,
-        Map<String, String> metadataFilter,
-        boolean returnMetadata,
-        boolean returnDistance
-    ) {
-        QueryVectorsRequest.Builder qb = QueryVectorsRequest.builder()
-            .vectorBucketName(vectorBucketName)
-            .indexName(vectorIndexName)
-            .queryVector(q -> q.float32(embeddingQuery))
-            .topK(topK)
-            .returnMetadata(returnMetadata)
-            .returnDistance(returnDistance);
-
-        if (metadataFilter != null && !metadataFilter.isEmpty()) {
-            qb.filter(metadataFilter);
-        }
-
-        CompletableFuture<List<QueryOutputVector>> fut = client
-            .queryVectors(qb.build())
-            .thenApply(resp -> resp.results());
-
-        return Maybe.fromFuture(fut);
-    }
-
-    public static void main(String[] args) {
-        S3VectorsAsyncClient client = S3VectorsAsyncClient.builder()
-            .region(software.amazon.awssdk.regions.Region.US_EAST_1)
-            .build();
-
-        S3VectorsRxJavaExample example = new S3VectorsRxJavaExample(client);
-
-        PutInputVector toInsert = PutInputVector.builder()
-            .key("vec1")
-            .data(d -> d.float32(List.of(/* floats matching dimensions */)))
-            .metadata(Map.of("retrieval_context_key","tenant-xyz","timestamp","168"))
-            .build();
-
-        example.putVector(toInsert)
-            .doOnSuccess(v -> System.out.println("Inserted vector"))
-            .flatMap(v -> example.queryNearest(
-                List.of(/* query floats matching dimensions */),
-                10,
-                Map.of("retrieval_context_key","tenant-xyz"),
-                true,
-                true))
-            .subscribe(results -> {
-                results.forEach(r -> {
-                    System.out.println("Key: " + r.key());
-                    System.out.println("Distance: " + r.distance());
-                    System.out.println("Metadata: " + r.metadata());
-                });
-            }, Throwable::printStackTrace);
-    }
-}
-```
