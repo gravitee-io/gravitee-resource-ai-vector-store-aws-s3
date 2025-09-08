@@ -35,8 +35,8 @@
         "threshold": {
           "type": "number",
           "title": "Threshold",
-          "description": "Minimum similarity score for a result to be considered relevant. For COSINE, this ranges from 0 (least similar) to 1 (most similar). For EUCLIDEAN, lower is more similar.",
-          "default": "0.7"
+          "description": "Minimum similarity score for a result to be considered relevant. Set this value higher to filter out less relevant results.",
+          "default": "0.9"
         },
         "readOnly": {
           "type": "boolean",
