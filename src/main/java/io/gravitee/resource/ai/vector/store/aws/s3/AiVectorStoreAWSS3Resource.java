@@ -64,6 +64,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public void doStart() throws Exception {
+    log.info("Starting AWS S3 Vectors resource");
     super.doStart();
 
     properties = super.configuration().properties();
@@ -82,7 +83,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
     ensureBucketAndIndex()
       .subscribeOn(Schedulers.io())
       .doOnComplete(() -> {
-        log.debug("AWS S3 bucket and Vectors index ready.");
+        log.info("AWS S3 bucket and Vectors index ready.");
         activated.set(true);
         if (properties.readOnly()) {
           logReadOnly(INITIALIZATION_OPERATION);
@@ -98,12 +99,14 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public void doStop() throws Exception {
+    log.info("Stopping AWS S3 Vectors Resource");
     s3VectorsClient.close();
     super.doStop();
   }
 
   @Override
   public Completable add(VectorEntity vectorEntity) {
+    log.debug("AWS S3 VectorsRresource: Vector added {}", vectorEntity);
     if (!activated.get()) {
       logNotActivated(ADD_OPERATION);
       return Completable.complete();
@@ -152,6 +155,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public Flowable<VectorResult> findRelevant(VectorEntity queryEntity) {
+    log.debug("AWS S3 Vectors resource (findRelevant) query: {}", queryEntity);
     if (!activated.get()) {
       logNotActivated(FIND_RELEVANT_OPERATION);
       return Flowable.empty();
@@ -191,6 +195,15 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
             String text = (String) metadata.remove(TEXT_ATTR);
             metadata.remove(VECTOR_ATTR);
             float score = properties.similarity().normalizeDistance(result.distance());
+            log.debug(
+              "AWS S3 Vectors Resource: Found vector {} with score {} and text {} and distance {} and metadata {} and threshold {}",
+              result.key(),
+              score,
+              text,
+              result.distance(),
+              resultMetadata != null ? resultMetadata.toString() : "null",
+              properties.threshold()
+            );
             return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
           })
           .filter(vr -> vr.score() >= properties.threshold());
@@ -221,7 +234,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       if (err != null) {
         log.error("Error removing vector {} from AWS S3 Vectors", vectorEntity.id(), err);
       } else {
-        log.debug("Vector {} removed from AWS S3 Vectors.", vectorEntity.id());
+        log.info("Vector {} removed from AWS S3 Vectors.", vectorEntity.id());
       }
     });
   }
@@ -336,7 +349,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
       return Completable
         .fromCompletionStage(fut)
         .doOnDispose(() -> fut.cancel(true))
-        .doOnComplete(() -> log.debug("Index created: {}", awsS3VectorsConfiguration.vectorIndexName()))
+        .doOnComplete(() -> log.info("AWS S3 Vectors Resource Index created: {}", awsS3VectorsConfiguration.vectorIndexName()))
         .doOnError(err -> log.warn("Index may already exist or could not be created: {}", err.getMessage(), err));
     });
   }
