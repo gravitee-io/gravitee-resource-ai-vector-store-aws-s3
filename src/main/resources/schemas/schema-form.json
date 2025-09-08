@@ -36,7 +36,7 @@
           "type": "number",
           "title": "Threshold",
           "description": "Minimum similarity score for a result to be considered relevant. Set this value higher to filter out less relevant results.",
-          "default": "0.9"
+          "default": 0.9
         },
         "readOnly": {
           "type": "boolean",

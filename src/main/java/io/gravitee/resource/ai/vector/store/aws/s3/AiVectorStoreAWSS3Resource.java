@@ -106,7 +106,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public Completable add(VectorEntity vectorEntity) {
-    log.debug("AWS S3 Vectors Resource: Vector added {}", vectorEntity);
     if (!activated.get()) {
       logNotActivated(ADD_OPERATION);
       return Completable.complete();
@@ -150,12 +149,11 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
         var fut = s3VectorsClient.putVectors(putRequest);
         return Completable.fromCompletionStage(fut).doOnDispose(() -> fut.cancel(true));
       })
-      .doOnComplete(() -> log.debug("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
+      .doOnComplete(() -> log.info("Vector {} put to AWS S3 Vectors.", vectorEntity.id()));
   }
 
   @Override
   public Flowable<VectorResult> findRelevant(VectorEntity queryEntity) {
-    log.debug("AWS S3 Vectors resource (findRelevant) query: {}", queryEntity);
     if (!activated.get()) {
       logNotActivated(FIND_RELEVANT_OPERATION);
       return Flowable.empty();
@@ -195,17 +193,6 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
             String text = (String) metadata.remove(TEXT_ATTR);
             metadata.remove(VECTOR_ATTR);
             float score = properties.similarity().normalizeDistance(result.distance());
-            if (log.isDebugEnabled()) {
-              log.debug(
-                "AWS S3 Vectors Resource: Found vector {} with score {} and text {} and distance {} and metadata {} and threshold {}",
-                result.key(),
-                score,
-                text,
-                result.distance(),
-                resultMetadata != null ? resultMetadata.toString() : "null",
-                properties.threshold()
-              );
-            }
             return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
           })
           .filter(vr -> vr.score() >= properties.threshold());
