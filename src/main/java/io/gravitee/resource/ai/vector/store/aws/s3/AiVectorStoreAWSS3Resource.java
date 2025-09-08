@@ -195,15 +195,17 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
             String text = (String) metadata.remove(TEXT_ATTR);
             metadata.remove(VECTOR_ATTR);
             float score = properties.similarity().normalizeDistance(result.distance());
-            log.debug(
-              "AWS S3 Vectors Resource: Found vector {} with score {} and text {} and distance {} and metadata {} and threshold {}",
-              result.key(),
-              score,
-              text,
-              result.distance(),
-              resultMetadata != null ? resultMetadata.toString() : "null",
-              properties.threshold()
-            );
+            if (log.isDebugEnabled()) {
+              log.debug(
+                "AWS S3 Vectors Resource: Found vector {} with score {} and text {} and distance {} and metadata {} and threshold {}",
+                result.key(),
+                score,
+                text,
+                result.distance(),
+                resultMetadata != null ? resultMetadata.toString() : "null",
+                properties.threshold()
+              );
+            }
             return new VectorResult(new VectorEntity(result.key(), text, metadata), score);
           })
           .filter(vr -> vr.score() >= properties.threshold());
