@@ -90,6 +90,20 @@ To use this resource, register it with the following configuration:
 
 To enable multi-tenant isolation, include a unique context key (`retrieval_context_key`) in the metadata of each vector when adding. Queries can be filtered using this metadata key. Deletions are not filtered by this key in the resource implementation.
 
+## 🧩 Metadata Codec: Why & How
+
+The resource uses a custom metadata codec (`S3VectorsMetadataCodec`) to safely encode and decode metadata for AWS S3 Vectors. This codec:
+- Converts Java metadata (Map<String, Object>) into the AWS S3 Vectors Document format for storage and filtering.
+- Ensures only supported primitive types (string, number, boolean, lists of these) are filterable in S3 Vectors.
+- Packs complex or nested metadata into a non-filterable blob field, allowing round-trip retrieval without loss.
+- Decodes metadata from S3 Vectors back into Java objects for use in your application.
+
+**Usage in the project:**
+- When adding or querying vectors, metadata is encoded using the codec to ensure compatibility and filtering support.
+- When retrieving results, metadata is decoded back to its original structure, including any complex/nested fields.
+
+This approach ensures robust, lossless metadata handling and supports advanced use cases like multi-tenant isolation and custom metadata fields.
+
 ---
 
 ## 🧠 How It Works
