@@ -106,7 +106,7 @@ public class AiVectorStoreAWSS3Resource extends AiVectorStoreResource<AiVectorSt
 
   @Override
   public Completable add(VectorEntity vectorEntity) {
-    log.debug("AWS S3 VectorsRresource: Vector added {}", vectorEntity);
+    log.debug("AWS S3 Vectors Resource: Vector added {}", vectorEntity);
     if (!activated.get()) {
       logNotActivated(ADD_OPERATION);
       return Completable.complete();
