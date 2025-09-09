@@ -63,6 +63,8 @@
     <gravitee-resource-ai-vector-store-api.version>1.0.0</gravitee-resource-ai-vector-store-api.version>
     <vertx.version>4.5.1</vertx.version>
     <aws.java.sdk.version>2.32.16</aws.java.sdk.version>
+    <!-- Property used by the publication job in CI-->
+    <publish-folder-path>graviteeio-apim/plugins/resources</publish-folder-path>
   </properties>
 
   <dependencies>
