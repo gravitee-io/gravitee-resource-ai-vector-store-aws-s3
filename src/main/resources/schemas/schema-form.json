@@ -13,6 +13,7 @@
           "title": "Embedding Size",
           "description": "Dimension of the embedding vectors. This must match the dimensionality used by the model generating embeddings.",
           "minimum": 1,
+          "maximum": 4096,
           "default": 384
         },
         "maxResults": {
@@ -20,6 +21,7 @@
           "title": "Max Results",
           "description": "Maximum number of results returned in a vector search query.",
           "minimum": 1,
+          "maximum": 1000,
           "default": 5
         },
         "similarity": {
@@ -36,7 +38,9 @@
           "type": "number",
           "title": "Threshold",
           "description": "Minimum similarity score for a result to be considered relevant. Set this value higher to filter out less relevant results.",
-          "default": 0.9
+          "default": 0.9,
+          "minimum": 0,
+          "maximum": 1
         },
         "readOnly": {
           "type": "boolean",
@@ -106,11 +110,15 @@
         "vectorBucketName": {
           "type": "string",
           "title": "S3 Vector Bucket Name",
-          "description": "S3 vector bucket name (3–63 lowercase, numbers, hyphens)."
+          "description": "S3 vector bucket name (3–63 lowercase, numbers, hyphens).",
+          "maxLength": 63,
+          "minLength": 3
         },
         "vectorIndexName": {
           "type": "string",
           "title": "Vector Index Name",
+          "maxLength": 63,
+          "minLength": 3,
           "description": "Index name within the bucket; immutable after creation."
         },
         "encryption": {
