@@ -61,6 +61,8 @@
     <gravitee-node.version>7.10.0</gravitee-node.version>
     <gravitee-common.version>4.7.0</gravitee-common.version>
     <gravitee-resource-ai-vector-store-api.version>1.0.0-alpha.2</gravitee-resource-ai-vector-store-api.version>
+    <jacoco-maven-plugin.version>0.8.13</jacoco-maven-plugin.version>
+    <properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
     <vertx.version>4.5.1</vertx.version>
     <aws.java.sdk.version>2.32.16</aws.java.sdk.version>
     <!-- Property used by the publication job in CI-->
@@ -187,6 +189,7 @@
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco-maven-plugin.version}</version>
         <executions>
           <execution>
             <id>prepare-agent</id>
@@ -214,6 +217,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>properties-maven-plugin</artifactId>
+        <version>${properties-maven-plugin.version}</version>
         <executions>
           <execution>
             <phase>initialize</phase>
@@ -249,13 +253,6 @@
             </goals>
           </execution>
         </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-javadoc-plugin</artifactId>
-        <configuration>
-          <source>21</source>
-        </configuration>
       </plugin>
     </plugins>
   </build>
