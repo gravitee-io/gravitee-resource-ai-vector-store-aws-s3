@@ -53,7 +53,7 @@
   </dependencyManagement>
 
   <properties>
-    <gravitee-bom.version>8.3.14</gravitee-bom.version>
+    <gravitee-bom.version>8.3.39</gravitee-bom.version>
     <junit-jupiter.version>5.12.0</junit-jupiter.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <gravitee-resource-api.version>1.1.0</gravitee-resource-api.version>
